@@ -16,6 +16,7 @@
 
 package cmwell.bg
 
+import akka.actor.ActorSystem
 import akka.pattern.ask
 import cmwell.driver.Dao
 import cmwell.fts.FTSServiceNew
@@ -24,8 +25,8 @@ import cmwell.common.ZStoreOffsetsService
 import cmwell.zstore.ZStore
 import com.typesafe.config.ConfigFactory
 import com.typesafe.scalalogging.LazyLogging
-import k.grid.service.{ServiceInitInfo, ServiceTypes}
-import k.grid.{Grid, GridConnection}
+//import k.grid.service.{ServiceInitInfo, ServiceTypes}
+//import k.grid.{Grid, GridConnection}
 import uk.org.lidalia.sysoutslf4j.context.SysOutOverSLF4J
 
 import scala.concurrent.Await
@@ -66,25 +67,27 @@ object Runner extends LazyLogging {
 
     val offsetsService = new ZStoreOffsetsService(zStore)
 
-    Grid.setGridConnection(GridConnection(memberName = "bg", labels = Set("bg")))
-    Grid.declareServices(ServiceTypes().
-      add("KafkaMonitor", classOf[KafkaMonitorActor], zkServers, 15 * 60 * 1000L, concurrent.ExecutionContext.Implicits.global).
-      addLocal(s"BGActor$partition", classOf[CMWellBGActor], partition, config, irwService, ftsService, zStore, offsetsService).
-      //     This is part of a temp solution to make Grid service start current partition actor here and register for failover
-      //     purposes rest of partitions
-      add(
-        (1 to numOfPartitions-1).toSet.filter(_ != partition).map{ par =>
-          s"BGActor$par" -> ServiceInitInfo(classOf[CMWellBGActor], None, par, config, irwService, ftsService, zStore, offsetsService)
-        }.toMap
-      ))
+//    Grid.setGridConnection(GridConnection(memberName = "bg", labels = Set("bg")))
+//    Grid.declareServices(ServiceTypes().
+//      add("KafkaMonitor", classOf[KafkaMonitorActor], zkServers, 15 * 60 * 1000L, concurrent.ExecutionContext.Implicits.global).
+//      addLocal(s"BGActor$partition", classOf[CMWellBGActor], partition, config, irwService, ftsService, zStore, offsetsService).
+//      //     This is part of a temp solution to make Grid service start current partition actor here and register for failover
+//      //     purposes rest of partitions
+//      add(
+//        (1 to numOfPartitions-1).toSet.filter(_ != partition).map{ par =>
+//          s"BGActor$par" -> ServiceInitInfo(classOf[CMWellBGActor], None, par, config, irwService, ftsService, zStore, offsetsService)
+//        }.toMap
+//      ))
+//
+//    Grid.joinClient
+//
+//    Thread.sleep(60000)
+//
+//    val actorSystem = Grid.system
 
-    Grid.joinClient
-
-    Thread.sleep(60000)
-
-    val actorSystem = Grid.system
-
-    val cmwellBGActor = Grid.serviceRef(s"BGActor$partition")
+//    val cmwellBGActor = Grid.serviceRef(s"BGActor$partition")
+    val actorSystem = ActorSystem("BG-Actor-System")
+    val cmwellBGActor = actorSystem.actorOf(CMWellBGActor.props(partition, config, irwService, ftsService, zStore, offsetsService))
 
     sys.addShutdownHook {
       logger info s"shutting down cmwell-bg's Indexer and Imp flows before process is exiting"
