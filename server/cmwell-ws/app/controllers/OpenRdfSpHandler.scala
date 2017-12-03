@@ -23,7 +23,6 @@ import javax.inject.{Inject, Singleton}
 import cmwell.syntaxutils._
 import cmwell.web.ld.cmw.CMWellRDFHelper
 import cmwell.web.ld.query.{Config, DataFetcherImpl}
-import cmwell.ws.AggregateBothOldAndNewTypesCaches
 import com.typesafe.scalalogging.LazyLogging
 import info.aduna.iteration.{CloseableIteration, CloseableIteratorIteration, EmptyIteration}
 import ld.query.TripleStore.TriplePattern
@@ -67,9 +66,9 @@ import scala.util.{Failure, Success, Try}
 class OpenRdfSpHandler @Inject()(tbg: NbgToggler, crudServiceFS: CRUDServiceFS, cmwellRDFHelper: CMWellRDFHelper)(implicit ec: ExecutionContext) extends InjectedController with LazyLogging {
 
   val config: Config = Config.defaultConfig
-  val typesCache = new AggregateBothOldAndNewTypesCaches(crudServiceFS,tbg)
-  val dataFetcher = new DataFetcherImpl(config,crudServiceFS,tbg.get)
-  val tripleStore = new TripleStore(dataFetcher, cmwellRDFHelper, tbg)
+  val typesCache = crudServiceFS.passiveFieldTypesCache
+  val dataFetcher = new DataFetcherImpl(config,crudServiceFS)
+  val tripleStore = new TripleStore(dataFetcher, cmwellRDFHelper)
   val cmWellTripleSource = new CmWellTripleSource(tripleStore)
   val cmWellReadOnlySailConnection = new CmWellReadOnlySailConnection(cmWellTripleSource)
   val cmWellReadOnlySail = new CmWellReadOnlySail(cmWellReadOnlySailConnection)

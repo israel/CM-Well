@@ -48,6 +48,7 @@ import org.apache.kafka.common.TopicPartition
 import org.apache.kafka.common.serialization.{ByteArrayDeserializer, ByteArraySerializer}
 import org.elasticsearch.action.update.UpdateRequest
 import org.elasticsearch.client.Requests
+import org.elasticsearch.common.xcontent.XContentType
 import org.joda.time.DateTime
 import org.slf4j.LoggerFactory
 
@@ -59,7 +60,7 @@ import scala.util.{Failure, Success, Try}
 /**
   * Created by israel on 14/06/2016.
   */
-class ImpStream(partition: Int, config: Config, irwService: IRWService, zStore: ZStore, ftsService: FTSServiceNew,
+class ImpStream(partition: Int, config: Config, irwService: IRWService, zStore: ZStore, ftsService: FTSService,
                 offsetsService: OffsetsService, bgActor:ActorRef)
                (implicit actorSystem: ActorSystem, executionContext: ExecutionContext,
                 materializer: ActorMaterializer
@@ -760,10 +761,9 @@ class ImpStream(partition: Int, config: Config, irwService: IRWService, zStore: 
                       infoton
                   val serializedInfoton = JsonSerializerForES.encodeInfoton(infotonWithUpdatedIndexTime, isCurrent)
                   // TODO: remove after all envs upgraded
-                  val iName = if (indexName != "") indexName else currentIndexName
                   (ESIndexRequest(
-                    Requests.indexRequest(iName).`type`("infoclone").id(infoton.uuid).create(true)
-                      .source(serializedInfoton),
+                    Requests.indexRequest(indexName).`type`("infoclone").id(infoton.uuid).create(true)
+                      .source(serializedInfoton, XContentType.JSON),
                     indexTime
                   ), infotonWithUpdatedIndexTime.weight)
                 }
@@ -779,7 +779,7 @@ class ImpStream(partition: Int, config: Config, irwService: IRWService, zStore: 
               //count it for metrics
               indexExistingCommandCounter += 1
               List((ESIndexRequest(
-                new UpdateRequest(indexName, "infoclone", uuid).doc(s"""{"system":{"current": false}}""").version(1),
+                new UpdateRequest(indexName, "infoclone", uuid).doc(s"""{"system":{"current": false}}""", XContentType.JSON).version(1),
                 None
               ), weight))
             case _ => ???

@@ -35,12 +35,13 @@ import com.typesafe.scalalogging.{LazyLogging, Logger}
 import nl.grons.metrics.scala.{Counter, DefaultInstrumented, Histogram, Timer}
 import org.apache.kafka.common.TopicPartition
 import org.apache.kafka.common.serialization.ByteArrayDeserializer
-import org.elasticsearch.action.ActionRequest
+import org.elasticsearch.action.{ActionRequest, DocWriteRequest}
 import org.elasticsearch.action.update.UpdateRequest
 import org.elasticsearch.client.Requests
 import org.slf4j.LoggerFactory
 import com.codahale.metrics.{Counter => DropwizardCounter, Histogram => DropwizardHistogram, Timer => DropwizardTimer}
 import org.apache.kafka.clients.consumer.ConsumerConfig
+import org.elasticsearch.common.xcontent.XContentType
 
 import collection.JavaConverters._
 import scala.concurrent.duration._
@@ -50,7 +51,7 @@ import scala.util.{Failure, Success, Try}
 /**
   * Created by israel on 14/06/2016.
   */
-class IndexerStream(partition: Int, config: Config, irwService: IRWService, ftsService: FTSServiceNew,
+class IndexerStream(partition: Int, config: Config, irwService: IRWService, ftsService: FTSService,
                     offsetsService: OffsetsService, bgActor:ActorRef)
                    (implicit actorSystem:ActorSystem,
                     executionContext:ExecutionContext,
@@ -132,7 +133,7 @@ class IndexerStream(partition: Int, config: Config, irwService: IRWService, ftsS
 
   import scala.language.existentials
 
-  case class InfoAction(esAction:ActionRequest[ _ <: ActionRequest[_ <: AnyRef]], weight:Long, indexTime:Option[Long])
+  case class InfoAction(esAction:DocWriteRequest[_], weight:Long, indexTime:Option[Long])
 
 
   val commitOffsets = Flow[Seq[Offset]].groupedWithin(6000, 3.seconds).toMat{
@@ -166,8 +167,8 @@ class IndexerStream(partition: Int, config: Config, irwService: IRWService, ftsS
               infoton
           val serializedInfoton = JsonSerializerForES.encodeInfoton(infotonWithUpdatedIndexTime, isCurrent)
 
-          val indexRequest: ActionRequest[_ <: ActionRequest[_ <: AnyRef]] =
-            Requests.indexRequest(indexName).`type`("infoclone").id(infoton.uuid).create(true).source(serializedInfoton)
+          val indexRequest: DocWriteRequest[_] =
+            Requests.indexRequest(indexName).`type`("infoclone").id(infoton.uuid).create(true).source(serializedInfoton, XContentType.JSON)
             logger debug s"creating es actions for indexNewInfotonCommand: $indexRequest"
           InfoAction(indexRequest, infoton.weight, indexTime)
         }.recoverWith{
@@ -210,7 +211,7 @@ class IndexerStream(partition: Int, config: Config, irwService: IRWService, ftsS
             logger debug s"creating es actions for indexExistingInfotonCommand: $ieic"
             indexExistingCommandCounter += 1
             val updateRequest = new UpdateRequest(indexName, "infoclone", uuid).version(1)
-              .doc(s"""{"system":{"current": false}}""").asInstanceOf[ActionRequest[_ <: ActionRequest[_ <: AnyRef]]]
+              .doc(s"""{"system":{"current": false}}""", XContentType.JSON).asInstanceOf[DocWriteRequest[_]]
             Success(bgMessage.copy(message = (InfoAction(updateRequest, weight, None), ieic.asInstanceOf[IndexCommand])))
         }.collect{
           case Success(x) => x

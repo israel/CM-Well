@@ -173,23 +173,23 @@ class DashBoard @Inject()(crudServiceFS: CRUDServiceFS)(implicit ec: ExecutionCo
     @volatile private[this] var currentState: TlogState = (-1L,-1L,-1L,-1L)
     @volatile private[this] var previousState: TlogState = (-1L,-1L,-1L,-1L)
 
-    private[this] val tlogStateDaemonCancellable = {
-      import scala.concurrent.duration.DurationInt
-      cmwell.util.concurrent.SimpleScheduler.scheduleAtFixedRate(0 seconds, 30 seconds){
-        Try(tlogStatus).foreach { ts: TlogState =>
-          previousState = currentState
-          currentState = ts
-        }
-      }
-    }
+//    private[this] val tlogStateDaemonCancellable = {
+//      import scala.concurrent.duration.DurationInt
+//      cmwell.util.concurrent.SimpleScheduler.scheduleAtFixedRate(0 seconds, 30 seconds){
+//        Try(tlogStatus).foreach { ts: TlogState =>
+//          previousState = currentState
+//          currentState = ts
+//        }
+//      }
+//    }
 
-    def tlogStatus: TlogState = {
-      val updatesWriteHead = crudServiceFS.updatesTlog.size
-      val updatesReadHead = crudServiceFS.impState.position
-      val indexesWriteHead = crudServiceFS.uuidsTlog.size
-      val indexesReadHead = crudServiceFS.indexerState.position
-      (updatesWriteHead, updatesReadHead, indexesWriteHead, indexesReadHead)
-    }
+//    def tlogStatus: TlogState = {
+//      val updatesWriteHead = crudServiceFS.updatesTlog.size
+//      val updatesReadHead = crudServiceFS.impState.position
+//      val indexesWriteHead = crudServiceFS.uuidsTlog.size
+//      val indexesReadHead = crudServiceFS.indexerState.position
+//      (updatesWriteHead, updatesReadHead, indexesWriteHead, indexesReadHead)
+//    }
 
     def get: Tuple2[TlogState,TlogState] = previousState -> currentState
 

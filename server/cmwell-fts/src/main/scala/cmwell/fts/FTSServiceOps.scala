@@ -62,7 +62,7 @@ trait FTSServiceOps {
   def extractSource[T : EsSourceExtractor](uuid: String, index: String)
                    (implicit executionContext:ExecutionContext) : Future[(T,Long)]
 
-  def executeBulkActionRequests(actionRequests:Iterable[ActionRequest[_ <: ActionRequest[_ <: AnyRef]]])
+  def executeBulkActionRequests(actionRequests:Iterable[ActionRequest])
                                (implicit executionContext:ExecutionContext, logger:Logger = loger): Future[BulkResponse]
 
   def executeBulkIndexRequests(indexRequests:Iterable[ESIndexRequest], numOfRetries: Int = 15,
@@ -170,4 +170,4 @@ trait ESMBean {
 
 trait FTSServiceESMBean extends ESMBean
 
-trait FTSServiceNewMBean extends ESMBean
+trait FTSServiceMBean extends ESMBean

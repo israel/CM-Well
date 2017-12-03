@@ -30,19 +30,19 @@ import scala.concurrent.{Await, ExecutionContext, Future}
 @Singleton
 class AuthCache @Inject()(crudServiceFS: CRUDServiceFS)(implicit ec: ExecutionContext) extends LazyLogging {
   // TODO Do not Await.result... These should return Future[Option[JsValue]]]
-  def getRole(roleName: String, nbg: Boolean): Option[JsValue] = Await.result(data(nbg).getAndUpdateIfNeeded.map(_.roles.get(roleName)).recoverWith { case _ =>
+  def getRole(roleName: String): Option[JsValue] = Await.result(data.getAndUpdateIfNeeded.map(_.roles.get(roleName)).recoverWith { case _ =>
     logger.warn(s"AuthCache Graceful Degradation: Search failed! Trying direct read for Role($roleName):")
-    getFromCrudAndExtractJson(s"/meta/auth/roles/$roleName", nbg)
+    getFromCrudAndExtractJson(s"/meta/auth/roles/$roleName")
   }, 5.seconds)
 
-  def getUserInfoton(userName: String, nbg: Boolean): Option[JsValue] = Await.result(data(nbg).getAndUpdateIfNeeded.map(_.users.get(userName)).recoverWith { case _ =>
+  def getUserInfoton(userName: String): Option[JsValue] = Await.result(data.getAndUpdateIfNeeded.map(_.users.get(userName)).recoverWith { case _ =>
     logger.warn(s"AuthCache Graceful Degradation: Search failed! Trying direct read for User($userName):")
-    getFromCrudAndExtractJson(s"/meta/auth/users/$userName", nbg)
+    getFromCrudAndExtractJson(s"/meta/auth/users/$userName")
   }, 5.seconds)
 
-  def invalidate(nbg: Boolean): Boolean = data(nbg).reset().isSuccess
+  def invalidate(): Boolean = data.reset().isSuccess
 
-  private def getFromCrudAndExtractJson(infotonPath: String, nbg: Boolean) = crudServiceFS.getInfoton(infotonPath, None, None, nbg = nbg).map {
+  private def getFromCrudAndExtractJson(infotonPath: String) = crudServiceFS.getInfoton(infotonPath, None, None).map {
     case Some(Everything(i)) =>
       extractPayload(i)
     case other =>
@@ -55,16 +55,14 @@ class AuthCache @Inject()(crudServiceFS: CRUDServiceFS)(implicit ec: ExecutionCo
   }
 
 
-  private def data(nbg: Boolean) = if(nbg) nData else oData
-  private val nData = new SingleElementLazyAsyncCache[AuthData](5 * 60000, initial = AuthData.empty)(load(nbg = true))
-  private val oData = new SingleElementLazyAsyncCache[AuthData](5 * 60000, initial = AuthData.empty)(load(nbg = false))
+  private val data = new SingleElementLazyAsyncCache[AuthData](5 * 60000, initial = AuthData.empty)(load())
 
-  private def load(nbg: Boolean): Future[AuthData] = {
+  private def load(): Future[AuthData] = {
 
     // one level under /meta/auth is a parent (e.g. "users", "roles")
     def isParent(infoton: Infoton) = infoton.path.count(_ == '/') < 4
 
-    crudServiceFS.search(Some(PathFilter("/meta/auth", descendants = true)), withData = true, paginationParams = PaginationParams(0, 2048), nbg = nbg).map { searchResult =>
+    crudServiceFS.search(Some(PathFilter("/meta/auth", descendants = true)), withData = true, paginationParams = PaginationParams(0, 2048)).map { searchResult =>
       val data = searchResult.infotons.filterNot(isParent).map(i => i.path -> extractPayload(i)).collect { case (p, Some(jsv)) => p -> jsv }.toMap
       val (usersData, rolesData) = cmwell.util.collections.partitionWith(data) { t =>
         val (path, payload) = t

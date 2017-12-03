@@ -62,30 +62,21 @@ object WorkerMain extends App with LazyLogging {
   RequestMonitor.init
 
   val injector = Guice.createInjector(new CWModule())
-  val nbgToggler = injector.getInstance(classOf[NbgToggler])
-  val crudServiceFS = new CRUDServiceFS(nbgToggler)(implicitly,Grid.system)
+  val crudServiceFS = new CRUDServiceFS()(implicitly,Grid.system)
   val cmwellRDFHelper = new CMWellRDFHelper(crudServiceFS,implicitly)
-  val nArqCache = new ArqCache(crudServiceFS,true)
-  val oArqCache = new ArqCache(crudServiceFS,false)
-  val nDataFetcher = new DataFetcherImpl(Config.defaultConfig,crudServiceFS,true)
-  val oDataFetcher = new DataFetcherImpl(Config.defaultConfig,crudServiceFS,false)
-  val nJenaArqExtensionsUtils = new JenaArqExtensionsUtils(nArqCache, true, crudServiceFS.nbgPassiveFieldTypesCache, cmwellRDFHelper, nDataFetcher)
-  val oJenaArqExtensionsUtils = new JenaArqExtensionsUtils(oArqCache, false, crudServiceFS.obgPassiveFieldTypesCache, cmwellRDFHelper, oDataFetcher)
+  val arqCache = new ArqCache(crudServiceFS)
+  val dataFetcher = new DataFetcherImpl(Config.defaultConfig,crudServiceFS)
+  val jenaArqExtensionsUtils = new JenaArqExtensionsUtils(arqCache, crudServiceFS.passiveFieldTypesCache, cmwellRDFHelper, dataFetcher)
 
-  val nJarsImporter = new JarsImporter(crudServiceFS,true)
-  val oJarsImporter = new JarsImporter(crudServiceFS,false)
-  val nQueriesImporter = new QueriesImporter(crudServiceFS,true)
-  val oQueriesImporter = new QueriesImporter(crudServiceFS,false)
-  val nSourcesImporter = new SourcesImporter(crudServiceFS,true)
-  val oSourcesImporter = new SourcesImporter(crudServiceFS,false)
+  val jarsImporter = new JarsImporter(crudServiceFS,true)
+  val queriesImporter = new QueriesImporter(crudServiceFS,true)
+  val sourcesImporter = new SourcesImporter(crudServiceFS,true)
 
-  val nRef = Grid.create(classOf[QueryEvaluatorActor], "NQueryEvaluatorActor",true,crudServiceFS,nArqCache,nJenaArqExtensionsUtils, nDataFetcher, nJarsImporter, nQueriesImporter, nSourcesImporter)
-  val oRef = Grid.create(classOf[QueryEvaluatorActor], "OQueryEvaluatorActor",false,crudServiceFS,oArqCache,oJenaArqExtensionsUtils, oDataFetcher, oJarsImporter, oQueriesImporter, oSourcesImporter)
+  val ref = Grid.create(classOf[QueryEvaluatorActor], "NQueryEvaluatorActor",true,crudServiceFS,arqCache,jenaArqExtensionsUtils, dataFetcher, jarsImporter, queriesImporter, sourcesImporter)
 
-  Grid.create(Props(classOf[QueryEvaluatorActorWatcher], nRef), "NQueryEvaluatorActorWatcher")
-  Grid.create(Props(classOf[QueryEvaluatorActorWatcher], oRef), "OQueryEvaluatorActorWatcher")
+  Grid.create(Props(classOf[QueryEvaluatorActorWatcher], ref), "NQueryEvaluatorActorWatcher")
 
-  val jenaArqExtensions = JenaArqExtensions.get(nJenaArqExtensionsUtils,oJenaArqExtensionsUtils)
+  val jenaArqExtensions = new JenaArqExtensions(jenaArqExtensionsUtils)
 }
 
 sealed trait QueryResponse {def content: String}
@@ -191,7 +182,7 @@ class QueryEvaluatorActor(nbg: Boolean,
         case Success(sprqlQuery) => {
           val config = Config(rp.doNotOptimize, rp.intermediateLimit, rp.resultsLimit, rp.verbose, SpHandler.queryTimeout, Some(SpHandler.queryTimeout.fromNow), rp.explainOnly)
           val JenaArqExtensionsUtils.BakedSparqlQuery(queryExecution,driver) =
-            JenaArqExtensionsUtils.buildCmWellQueryExecution(sprqlQuery, host, config, nbg, crudServiceFS, arqCache, jenaArqExtensionsUtils, dataFetcher)
+            JenaArqExtensionsUtils.buildCmWellQueryExecution(sprqlQuery, host, config, crudServiceFS, arqCache, jenaArqExtensionsUtils, dataFetcher)
 
           if (!sprqlQuery.isConstructType && !sprqlQuery.isSelectType) {
             sender() ! RemoteFailure(new IllegalArgumentException("Query Type must be either SELECT or CONSTRUCT"))

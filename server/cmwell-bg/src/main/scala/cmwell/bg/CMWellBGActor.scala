@@ -21,7 +21,7 @@ import java.util.concurrent.TimeUnit
 import akka.actor.{Actor, ActorRef, OneForOneStrategy, PoisonPill, Props}
 import akka.kafka.{ConsumerSettings, KafkaConsumerActor}
 import akka.stream.{ActorMaterializer, Supervision}
-import cmwell.fts.FTSServiceNew
+import cmwell.fts.FTSService
 import cmwell.irw.IRWService
 import cmwell.common.OffsetsService
 import cmwell.common.ExitWithError
@@ -41,7 +41,7 @@ import scala.concurrent.duration._
 
 object CMWellBGActor {
   val name = "CMWellBGActor"
-  def props(partition:Int, config:Config, irwService:IRWService, ftsService:FTSServiceNew, zStore: ZStore,
+  def props(partition:Int, config:Config, irwService:IRWService, ftsService:FTSService, zStore: ZStore,
             offsetsService: OffsetsService) =
     Props(new CMWellBGActor(partition, config, irwService, ftsService, zStore, offsetsService))
 }
@@ -49,7 +49,7 @@ object CMWellBGActor {
 /**
   * Created by israel on 15/06/2016.
   */
-class CMWellBGActor(partition:Int, config:Config, irwService:IRWService, ftsService:FTSServiceNew, zStore: ZStore,
+class CMWellBGActor(partition:Int, config:Config, irwService:IRWService, ftsService:FTSService, zStore: ZStore,
                     offsetsService: OffsetsService) extends Actor with LazyLogging with DefaultInstrumented {
 
   var impStream:ImpStream = null

@@ -20,7 +20,7 @@ import akka.actor.ActorRef
 import akka.pattern.ask
 import ch.qos.logback.classic.LoggerContext
 import cmwell.driver.Dao
-import cmwell.fts.FTSServiceNew
+import cmwell.fts.FTSService
 import cmwell.irw.IRWService
 import cmwell.common.ZStoreOffsetsService
 import cmwell.zstore.ZStore
@@ -67,7 +67,7 @@ object Runner extends LazyLogging {
         IRWService.newIRW(irwServiceDao, false)
       }
 
-      val ftsService = FTSServiceNew("bg.es.yml")
+      val ftsService = FTSService("bg.es.yml")
 
       val zStore = ZStore(casDao)
 

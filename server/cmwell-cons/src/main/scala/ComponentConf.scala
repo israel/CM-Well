@@ -247,8 +247,8 @@ case class CassandraConf(home : String, seeds : String , clusterName : String , 
   }
 }
 
-case class ElasticsearchConf(clusterName : String, nodeName : String, dataNode : Boolean, masterNode : Boolean, expectedNodes : Int, numberOfReplicas : Int , seeds : String , seedPort : Int = 9300, home : String, resourceManager : JvmMemoryAllocations, dir : String = "es", template : String = "es.yml", listenAddress : String = "127.0.0.1", masterNodes : Int, sName : String, index : Int , rs : RackSelector, autoCreateIndex : Boolean, g1 : Boolean, hostIp : String) extends ComponentConf(hostIp, s"$home/app/es/cur",sName, s"$home/conf/$dir","es.yml", index) {
-  val classpath = s"""'$home/app/es/cur/lib/*:$home/app/es/cur/lib/sigar/*'"""
+case class ElasticsearchConf(clusterName : String, nodeName : String, dataNode : Boolean, masterNode : Boolean, expectedNodes : Int, numberOfReplicas : Int , seeds : String , seedPort : Int = 9300, home : String, resourceManager : JvmMemoryAllocations, dir : String = "es", template : String = "elasticsearch.yml", listenAddress : String = "127.0.0.1", masterNodes : Int, sName : String, index : Int , rs : RackSelector, autoCreateIndex : Boolean, g1 : Boolean, hostIp : String) extends ComponentConf(hostIp, s"$home/app/es/cur",sName, s"$home/conf/$dir","elasticsearch.yml", index) {
+  val classpath = s"""'$home/app/es/cur/lib/*:'"""
 
   override def getPsIdentifier = {
     if(dir == "es-master")
@@ -305,33 +305,47 @@ case class ElasticsearchConf(clusterName : String, nodeName : String, dataNode :
         Seq(s"-Dcom.sun.management.jmxremote.port=${PortManagers.es.jmxPortManager.getPort(index)}",
         "-Dcom.sun.management.jmxremote.ssl=false",
         "-Dcom.sun.management.jmxremote.authenticate=false",
-        "-Delasticsearch",
         s"-Des.path.home=$home/app/es/cur",
-        s"-Des.config=$home/conf/${dir}/es.yml")
+        "-Delasticsearch",
+        "-server",
+          "-Dfile.encoding=UTF-8",
+          "-Djna.nosys=true",
+          "-Djdk.io.permissionsUseCanonicalPath=true",
+          "-Dio.netty.noUnsafe=true",
+          "-Dio.netty.noKeySetOptimization=true",
+          "-Dio.netty.recycler.maxCapacityPerThread=0",
+          "-Dlog4j.shutdownHookEnabled=false",
+          "-Dlog4j2.disable.jmx=true",
+          "-Dlog4j.skipJansi=true"
+          )
     }
 
     val args = Seq("starter", "java") ++ agentLibArgs ++ jvmArgs ++ JVMOptimizer.gcLoggingJVM(s"$home/log/${dir}/gc.log") ++ Seq("-cp", classpath, "org.elasticsearch.bootstrap.Elasticsearch")
 
+//    val scriptString =
+//      s"""export PATH=$home/app/java/bin:$home/bin/utils:$PATH
+//         |export ES_HOME=s"$home/conf/$dir"
+//         |$CHKSTRT
+//         |$BMSG
+//         |${args.mkString(" ")} > $home/log/$dir/stdout.log 2> $home/log/$dir/stderr.log &""".stripMargin
+
     val scriptString =
       s"""export PATH=$home/app/java/bin:$home/bin/utils:$PATH
-         |export ES_HOME=$home/app/es/cur
-         |$CHKSTRT
-         |$BMSG
-         |${args.mkString(" ")} > $home/log/$dir/stdout.log 2> $home/log/$dir/stderr.log &""".stripMargin
-
+         |export ES_PATH_CONF=$home/conf/$dir/config
+         |starter bin/elasticsearch > $home/log/$dir/stdout.log 2> $home/log/$dir/stderr.log &""".stripMargin
 
 
     ConfFile(sName,scriptString,true)
   }
 
   override def mkConfig: List[ConfFile] = {
-    val httpHost = if(masterNode && !dataNode) s"http.host: $host" else ""
-    val httpPort = if(masterNode && !dataNode) 9200 else PortManagers.es.httpPortManager.getPort(index)
-    val transportPort = if(masterNode && !dataNode) 9300 else PortManagers.es.transportPortManager.getPort(index)
+    val httpHost = if(masterNode) s"http.host: $host" else ""
+    val httpPort = if(masterNode) 9200 else PortManagers.es.httpPortManager.getPort(index)
+    val transportPort = if(masterNode) 9300 else PortManagers.es.transportPortManager.getPort(index)
 
     val m = Map[String, String](
       "clustername" -> clusterName,
-      "nodename" -> listenAddress,
+      "nodename" -> nodeName,
       "node-master" -> masterNode.toString,
       "node-data" -> dataNode.toString,
       "recoverafternodes" -> {if(expectedNodes > 3) expectedNodes - 2 else expectedNodes - 1}.toString,
@@ -352,15 +366,15 @@ case class ElasticsearchConf(clusterName : String, nodeName : String, dataNode :
     val confContent = ResourceBuilder.getResource(s"scripts/templates/${template}", m)
 
     val m2 = Map[String,String]("number_of_shards" -> expectedNodes.toString, "number_of_replicas" -> numberOfReplicas.toString)
-    val mappingContent = ResourceBuilder.getResource(s"scripts/templates/mapping.json",m2)
-    val mappingContentNew = ResourceBuilder.getResource(s"scripts/templates/indices_template_new.json",m2)
+    val mappingContent = ResourceBuilder.getResource(s"scripts/templates/indices_template_new.json",m2)
 
-    val loggerConf = ResourceBuilder.getResource("scripts/templates/es-logger.yml", Map.empty[String, String])
+    val loggerConf = ResourceBuilder.getResource("scripts/templates/es-log4j2.properties", Map.empty[String, String])
+    val jvmOpts = ResourceBuilder.getResource("scripts/templates/es-jvm.options", Map.empty[String, String])
 
-    List(ConfFile("es.yml", confContent, false),
-         ConfFile("mapping.json", mappingContent ,false),
-         ConfFile("indices_template_new.json", mappingContentNew, false),
-         ConfFile("logging.yml", loggerConf, false, Some(s"$home/app/es/cur/config")))
+    List(ConfFile("elasticsearch.yml", confContent, false, Some(s"$home/conf/$dir/config")),
+         ConfFile("indices_template_new.json", mappingContent, false),
+         ConfFile("log4j2.properties", loggerConf, false, Some(s"$home/conf/$dir/config")),
+         ConfFile("jvm.options", jvmOpts, false, Some(s"$home/conf/$dir/config")))
   }
 }
 

@@ -142,7 +142,7 @@ object CMWellBuild extends AutoPlugin {
 		CMWellCommon.scalazTaskAsScalaFuture(task)
 	}
 
-	override def requires = CoursierPlugin && DoctestPlugin && DependencyGraphPlugin
+	override def requires = /*CoursierPlugin &&*/ DoctestPlugin && DependencyGraphPlugin
 
 	override def projectSettings = Seq(
 		coursierMaxIterations := 200,

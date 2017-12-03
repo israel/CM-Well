@@ -17,81 +17,73 @@
 package logic
 
 import java.util.Properties
+import javax.inject._
 
 import akka.NotUsed
-import akka.actor.{Actor, ActorSystem}
-import akka.actor.Actor.Receive
+import akka.actor.ActorSystem
 import akka.stream.scaladsl.Source
+import cmwell.common.{DeleteAttributesCommand, DeletePathCommand, WriteCommand, _}
 import cmwell.domain._
 import cmwell.driver.Dao
-import cmwell.formats.{NquadsFlavor, RdfType}
-import cmwell.fts.{FTSServiceNew, Settings => _, _}
+import cmwell.fts._
 import cmwell.irw._
-import cmwell.stortill.Strotill.{CasInfo, EsExtendedInfo, ZStoreInfo}
-import cmwell.stortill.{Operations, ProxyOperations}
-import cmwell.tlog.{TLog, TLogState}
-import cmwell.util.{Box, BoxedFailure, EmptyBox, FullBox}
 import cmwell.util.concurrent.SingleElementLazyAsyncCache
-import cmwell.common.{BulkCommand, DeleteAttributesCommand, DeletePathCommand, WriteCommand, _}
+import cmwell.util.{Box, BoxedFailure, EmptyBox, FullBox}
 import cmwell.ws.Settings
-import cmwell.zcache.{L1Cache, ZCache}
+import cmwell.ws.qp.Encoder
+import cmwell.zcache.ZCache
 import cmwell.zstore.ZStore
 import com.datastax.driver.core.ConsistencyLevel
+import com.google.common.cache.{Cache, CacheBuilder}
 import com.typesafe.scalalogging.LazyLogging
+import ld.cmw.PassiveFieldTypesCache
 import org.apache.kafka.clients.producer.{Callback, KafkaProducer, ProducerRecord, RecordMetadata}
-import org.elasticsearch.action.bulk.BulkResponse
 import org.joda.time.{DateTime, DateTimeZone}
-import wsutil.{FormatterManager, RawFieldFilter}
 
 import scala.concurrent._
 import scala.concurrent.duration._
 import scala.util.{Failure, Success}
-import javax.inject._
-
-import cmwell.ws.qp.Encoder
-import controllers.NbgToggler
-import ld.cmw.{NbgPassiveFieldTypesCache, ObgPassiveFieldTypesCache}
 
 @Singleton
-class CRUDServiceFS @Inject()(tbg: NbgToggler)(implicit ec: ExecutionContext, sys: ActorSystem) extends LazyLogging {
+class CRUDServiceFS @Inject()()(implicit ec: ExecutionContext, sys: ActorSystem) extends LazyLogging {
 
   import cmwell.ws.Settings._
 
-  def newBG = tbg.get
-
-  lazy val nbgPassiveFieldTypesCache = new NbgPassiveFieldTypesCache(this,ec,sys)
-  lazy val obgPassiveFieldTypesCache = new ObgPassiveFieldTypesCache(this,ec,sys)
+  lazy val cache:Cache[String,Either[Future[Set[Char]],(Long, Set[Char])]] = CacheBuilder.newBuilder().concurrencyLevel(1).build()
+  lazy val passiveFieldTypesCache = new PassiveFieldTypesCache(cache,sys, this)
+//  lazy val obgPassiveFieldTypesCache = new ObgPassiveFieldTypesCache(this,ec,sys)
   val level: ConsistencyLevel = ONE
   // create state object in read only
-  val impState = TLogState("imp", updatesTLogName, updatesTLogPartition, true)
-  val indexerState = TLogState("indexer", uuidsTLogName, updatesTLogPartition, true)
+//  val impState = TLogState("imp", updatesTLogName, updatesTLogPartition, true)
+//  val indexerState = TLogState("indexer", uuidsTLogName, updatesTLogPartition, true)
 
-  val updatesTlog = TLog(updatesTLogName, updatesTLogPartition)
-  updatesTlog.init()
+//  val updatesTlog = TLog(updatesTLogName, updatesTLogPartition)
+//  updatesTlog.init()
 
-  val uuidsTlog = TLog(uuidsTLogName, uuidsTLogPartition, readOnly = true)
-  uuidsTlog.init()
+//  val uuidsTlog = TLog(uuidsTLogName, uuidsTLogPartition, readOnly = true)
+//  uuidsTlog.init()
 
   lazy val defaultParallelism = cmwell.util.os.Props.os.getAvailableProcessors
   lazy val zStore = ZStore(Dao(irwServiceDaoClusterName, irwServiceDaoKeySpace2, irwServiceDaoHostName))
   lazy val zCache = new ZCache(zStore)
 
-  lazy val _irwService = IRWService(Dao(irwServiceDaoClusterName, irwServiceDaoKeySpace, irwServiceDaoHostName), disableReadCache = !Settings.irwReadCacheEnabled)
-  lazy val _irwService2 = IRWService.newIRW(Dao(irwServiceDaoClusterName, irwServiceDaoKeySpace2, irwServiceDaoHostName), disableReadCache = !Settings.irwReadCacheEnabled)
-  def irwService(nbg: Boolean = newBG): IRWService = {
-    if(nbg || newBG) _irwService2
-    else _irwService
-  }
+//  lazy val _irwService = IRWService(Dao(irwServiceDaoClusterName, irwServiceDaoKeySpace, irwServiceDaoHostName), disableReadCache = !Settings.irwReadCacheEnabled)
+//  lazy val _irwService2 = IRWService.newIRW(Dao(irwServiceDaoClusterName, irwServiceDaoKeySpace2, irwServiceDaoHostName), disableReadCache = !Settings.irwReadCacheEnabled)
+//  def irwService(nbg: Boolean = newBG): IRWService = {
+//    if(nbg || newBG) _irwService2
+//    else _irwService
+//  }
+  val irwService = IRWService.newIRW(Dao(irwServiceDaoClusterName, irwServiceDaoKeySpace2, irwServiceDaoHostName), disableReadCache = !Settings.irwReadCacheEnabled)
 
-  val ftsServiceOld = FTSServiceES.getOne("ws.es.yml", false)
-  val ftsServiceNew = FTSServiceNew("ws.es.yml")
-  def ftsService(nbg: Boolean = newBG): FTSServiceOps = {
-    if(nbg || newBG) ftsServiceNew
-    else ftsServiceOld
-  }
+//  val ftsServiceOld = FTSServiceES.getOne("ws.es.yml", false)
+  val ftsService = FTSService()
+//  def ftsService(nbg: Boolean = newBG): FTSServiceOps = {
+//    if(nbg || newBG) FTSService
+//    else ftsServiceOld
+//  }
 
-  lazy val oldServices: (IRWService,FTSServiceOps) = _irwService -> ftsServiceOld
-  lazy val newServices: (IRWService,FTSServiceOps) = _irwService2 -> ftsServiceNew
+//  lazy val oldServices: (IRWService,FTSServiceOps) = _irwService -> ftsServiceOld
+//  lazy val newServices: (IRWService,FTSServiceOps) = _irwService2 -> FTSService
 
   val producerProperties = new Properties
   producerProperties.put("bootstrap.servers", kafkaURL)
@@ -100,33 +92,30 @@ class CRUDServiceFS @Inject()(tbg: NbgToggler)(implicit ec: ExecutionContext, sy
   //With CW there is no kafka writes and no kafka configuration thus the producer is created lazily
   lazy val kafkaProducer = new KafkaProducer[Array[Byte], Array[Byte]](producerProperties)
 
-  val proxyOpsOld: Operations = ProxyOperations(_irwService, ftsServiceOld)
-  val proxyOpsNew: Operations = ProxyOperations(_irwService2, ftsServiceNew)
-  def proxyOps(nbg: Boolean = newBG): Operations  = {
-    if(nbg || newBG) proxyOpsNew
-    else proxyOpsOld
-  }
+//  val proxyOpsOld: Operations = ProxyOperations(_irwService, ftsServiceOld)
+//  val proxyOpsNew: Operations = ProxyOperations(_irwService2, FTSService)
+//  def proxyOps(nbg: Boolean = newBG): Operations  = {
+//    if(nbg || newBG) proxyOpsNew
+//    else proxyOpsOld
+//  }
 
-  val ESMappingsCacheOld = new SingleElementLazyAsyncCache[Set[String]](Settings.fieldsNamesCacheTimeout.toMillis,Set.empty)(ftsServiceOld.getMappings(withHistory = true))
-  val ESMappingsCacheNew = new SingleElementLazyAsyncCache[Set[String]](Settings.fieldsNamesCacheTimeout.toMillis,Set.empty)(ftsServiceNew.getMappings(withHistory = true))
-  def ESMappingsCache(nbg: Boolean = newBG): SingleElementLazyAsyncCache[Set[String]] = {
-    if(nbg || newBG) ESMappingsCacheNew
-    else ESMappingsCacheOld
-  }
+//  val ESMappingsCacheOld = new SingleElementLazyAsyncCache[Set[String]](Settings.fieldsNamesCacheTimeout.toMillis,Set.empty)(ftsServiceOld.getMappings(withHistory = true))
+//  val ESMappingsCache = new SingleElementLazyAsyncCache[Set[String]](Settings.fieldsNamesCacheTimeout.toMillis,Set.empty)(ftsService.getMappings(withHistory = true))
+//  def ESMappingsCache(nbg: Boolean = newBG): SingleElementLazyAsyncCache[Set[String]] = {
+//    if(nbg || newBG) ESMappingsCacheNew
+//    else ESMappingsCacheOld
+//  }
+  val ESMappingsCache:SingleElementLazyAsyncCache[Set[String]] = null
 
-  val MetaNsCacheOld =
-    new SingleElementLazyAsyncCache[Set[String]](Settings.fieldsNamesCacheTimeout.toMillis,Set.empty)(fetchEntireMetaNsAsPredicates(false))
-  val MetaNsCacheNew =
-    new SingleElementLazyAsyncCache[Set[String]](Settings.fieldsNamesCacheTimeout.toMillis,Set.empty)(fetchEntireMetaNsAsPredicates(true))
-
-  def metaNsCache(nbg: Boolean = newBG) = if(nbg || newBG) MetaNsCacheNew else MetaNsCacheOld
+  val metaNsCache =
+    new SingleElementLazyAsyncCache[Set[String]](Settings.fieldsNamesCacheTimeout.toMillis,Set.empty)(fetchEntireMetaNsAsPredicates())
 
   private val fieldsSetBreakout = scala.collection.breakOut[Seq[Option[String]],String,Set[String]]
 
-  private def fetchEntireMetaNsAsPredicates(nbg: Boolean = newBG) = {
+  private def fetchEntireMetaNsAsPredicates() = {
     val chunkSize = 512
     def fetchFields(offset: Int = 0): Future[Seq[Infoton]] = {
-      val fieldsFut = search(Some(PathFilter("/meta/ns", descendants = true)), paginationParams = PaginationParams(offset, chunkSize), withData = true, nbg = nbg)
+      val fieldsFut = search(Some(PathFilter("/meta/ns", descendants = true)), paginationParams = PaginationParams(offset, chunkSize), withData = true)
       fieldsFut.flatMap{ fields =>
         if(fields.length==chunkSize) fetchFields(offset+chunkSize).map(_ ++ fields.infotons) else Future.successful(fields.infotons)
       }
@@ -153,22 +142,21 @@ class CRUDServiceFS @Inject()(tbg: NbgToggler)(implicit ec: ExecutionContext, sy
   }
 
 
-  def countSearchOpenContexts(nbg: Boolean = this.newBG): Array[(String,Long)] =
-    ftsService(nbg).countSearchOpenContexts()
+  def countSearchOpenContexts(): Array[(String,Long)] = null
 
-  def getInfotonByPathAsync(path: String,nbg: Boolean = this.newBG): Future[Box[Infoton]] =
-    irwService(nbg).readPathAsync(path, level)
+  def getInfotonByPathAsync(path: String): Future[Box[Infoton]] =
+    irwService.readPathAsync(path, level)
 
-  def getInfoton(path: String, offset: Option[Int], length: Option[Int], nbg: Boolean = this.newBG): Future[Option[ContentPortion]] = {
+  def getInfoton(path: String, offset: Option[Int], length: Option[Int]): Future[Option[ContentPortion]] = {
 
     def listChildrenBoundedTime(path: String, offset: Option[Int], length: Option[Int]): Future[Option[FTSSearchResponse]] = {
       val fut =
-          ftsService(nbg).listChildren(path, offset.getOrElse(0), length.get)
+          ftsService.listChildren(path, offset.getOrElse(0), length.get)
       val dur = cmwell.ws.Settings.esGracfulDegradationTimeout.seconds
       cmwell.util.concurrent.timeoutOptionFuture(fut, dur)
     }
 
-    val infotonFuture = irwService(nbg).readPathAsync(path, level)
+    val infotonFuture = irwService.readPathAsync(path, level)
 
     val reply = if (length.getOrElse(0) > 0) {
       val searchResponseFuture = listChildrenBoundedTime(path, offset, length)
@@ -190,7 +178,7 @@ class CRUDServiceFS @Inject()(tbg: NbgToggler)(implicit ec: ExecutionContext, sy
           }
           case EmptyBox => Option.empty[ContentPortion]
           case BoxedFailure(e) =>
-            logger.error(s"boxed failure for readPathAsync [$path], nbg=$nbg",e)
+            logger.error(s"boxed failure for readPathAsync [$path]",e)
             Option.empty[ContentPortion]
         }
       }
@@ -198,7 +186,7 @@ class CRUDServiceFS @Inject()(tbg: NbgToggler)(implicit ec: ExecutionContext, sy
       // no children requested, just return infoton from IRW service
       infotonFuture.map{
         case BoxedFailure(e) =>
-          logger.error(s"boxed failure for readPathAsync [$path], nbg=$nbg",e)
+          logger.error(s"boxed failure for readPathAsync [$path]",e)
           None
         case box => box.toOption.map(Everything.apply)
       }
@@ -206,21 +194,18 @@ class CRUDServiceFS @Inject()(tbg: NbgToggler)(implicit ec: ExecutionContext, sy
     reply
   }
 
-  def getInfotonHistory(path: String, limit: Int, nbg: Boolean = newBG): Future[InfotonHistoryVersions] = {
-    val (_, uuidVec) = irwService(nbg).history(path,limit).sortBy(_._1).unzip
+  def getInfotonHistory(path: String, limit: Int): Future[InfotonHistoryVersions] = {
+    val (_, uuidVec) = irwService.history(path,limit).sortBy(_._1).unzip
     if (uuidVec.isEmpty) Future.successful(InfotonHistoryVersions(Vector.empty[Infoton]))
-    else irwService(nbg).readUUIDSAsync(uuidVec, level).map(seq => InfotonHistoryVersions(seq.collect{case FullBox(i) => i}))
+    else irwService.readUUIDSAsync(uuidVec, level).map(seq => InfotonHistoryVersions(seq.collect{case FullBox(i) => i}))
   }
 
-  def getRawPathHistory(path: String, limit: Int, nbg: Boolean): Future[Vector[(Long,String)]] = irwService(nbg) match {
-    case irw@`_irwService2` => irw.historyAsync(path, limit)
-    case irw@`_irwService` => irw.historyAsync(path, limit).map(_.sortBy(_._1))
-  }
+  def getRawPathHistory(path: String, limit: Int): Future[Vector[(Long,String)]] = irwService.historyAsync(path, limit)
 
-  def getInfotonHistoryReactive(path: String, nbg: Boolean = newBG): Source[Infoton,NotUsed] = {
-    getRawPathHistoryReactive(path,nbg)
+  def getInfotonHistoryReactive(path: String): Source[Infoton,NotUsed] = {
+    getRawPathHistoryReactive(path)
       .mapAsync(defaultParallelism) {
-        case (_, uuid) => irwService(nbg).readUUIDAsync(uuid).andThen {
+        case (_, uuid) => irwService.readUUIDAsync(uuid).andThen {
           case Failure(fail) => logger.error(s"uuid [$uuid] could not be fetched from cassandra", fail)
           case Success(EmptyBox) => logger.error(s"uuid [$uuid] could not be fetched from cassandra: got EmptyBox")
           case Success(BoxedFailure(e)) => logger.error(s"uuid [$uuid] could not be fetched from cassandra: got BoxedFailure",e)
@@ -235,24 +220,24 @@ class CRUDServiceFS @Inject()(tbg: NbgToggler)(implicit ec: ExecutionContext, sy
     * all the versions are returned as a single in-memory vector, and thus,
     * may result in OOM error in the case of heavily updated paths.
     */
-  def getRawPathHistoryReactive(path: String, nbg: Boolean = newBG): Source[(Long,String),NotUsed] =
-    irwService(nbg).historyReactive(path)
+  def getRawPathHistoryReactive(path: String): Source[(Long,String),NotUsed] =
+    irwService.historyReactive(path)
 
-  def getInfotons(paths: Seq[String], nbg: Boolean = newBG): Future[BagOfInfotons] =
-    irwService(nbg).readPathsAsync(paths, level).map{ infopts =>
+  def getInfotons(paths: Seq[String]): Future[BagOfInfotons] =
+    irwService.readPathsAsync(paths, level).map{ infopts =>
       BagOfInfotons(infopts.collect{
         case FullBox(infoton) => infoton
       })
     }
 
-  def getInfotonsByPathOrUuid(paths: Vector[String] = Vector.empty[String], uuids: Vector[String] = Vector.empty[String], nbg: Boolean = newBG): Future[BagOfInfotons] = {
+  def getInfotonsByPathOrUuid(paths: Vector[String] = Vector.empty[String], uuids: Vector[String] = Vector.empty[String]): Future[BagOfInfotons] = {
     val futureInfotonsList: Future[List[Infoton]] = (paths, uuids) match {
       case (ps, us) if ps.isEmpty && us.isEmpty => Future.successful(Nil)
-      case (ps, us) if us.isEmpty => irwService(nbg).readPathsAsync(ps, level).map(_.collect { case FullBox(i) => i }.toList)
-      case (ps, us) if ps.isEmpty => irwService(nbg).readUUIDSAsync(us, level).map(_.collect { case FullBox(i) => i }.toList)
+      case (ps, us) if us.isEmpty => irwService.readPathsAsync(ps, level).map(_.collect { case FullBox(i) => i }.toList)
+      case (ps, us) if ps.isEmpty => irwService.readUUIDSAsync(us, level).map(_.collect { case FullBox(i) => i }.toList)
       case (ps, us) => {
-        val f1 = irwService(nbg).readPathsAsync(ps, level).map(_.collect { case FullBox(i) => i })
-        val f2 = irwService(nbg).readUUIDSAsync(us, level).map(_.collect { case FullBox(i) => i })
+        val f1 = irwService.readPathsAsync(ps, level).map(_.collect { case FullBox(i) => i })
+        val f2 = irwService.readUUIDSAsync(us, level).map(_.collect { case FullBox(i) => i })
         Future.sequence(List(f1, f2)).map(_.flatten.distinct)
       }
     }
@@ -260,12 +245,12 @@ class CRUDServiceFS @Inject()(tbg: NbgToggler)(implicit ec: ExecutionContext, sy
     futureInfotonsList.map(BagOfInfotons.apply)
   }
 
-  def getInfotonByUuidAsync(uuid: String, nbg: Boolean = newBG): Future[Box[Infoton]] = {
-    irwService(nbg).readUUIDAsync(uuid, level)
+  def getInfotonByUuidAsync(uuid: String): Future[Box[Infoton]] = {
+    irwService.readUUIDAsync(uuid, level)
   }
 
-  def getInfotonsByUuidAsync(uuidVec: Seq[String], nbg: Boolean = newBG): Future[Seq[Infoton]] = {
-    irwService(nbg).readUUIDSAsync(uuidVec, level).map(_.collect{
+  def getInfotonsByUuidAsync(uuidVec: Seq[String]): Future[Seq[Infoton]] = {
+    irwService.readUUIDSAsync(uuidVec, level).map(_.collect{
       case FullBox(i) => i
     })
   }
@@ -297,11 +282,8 @@ class CRUDServiceFS @Inject()(tbg: NbgToggler)(implicit ec: ExecutionContext, sy
           Future.successful(t)
         }
       }
-      val tlogWriteRes = if (oldBGFlag) payloadForIndirectLargeInfoton.flatMap(t => updatesTlog.write(t._1)) else Future.successful(true)
       payloadForIndirectLargeInfoton.flatMap { payload =>
-        val kafkaWriteRes = if (newBGFlag || newBG) sendToKafka(infoton.path, payload._2, isPriorityWrite).map(_ => true)
-                            else Future.successful(true)
-        tlogWriteRes.zip(kafkaWriteRes).map(t => t._2 && t._2)
+        sendToKafka(infoton.path, payload._2, isPriorityWrite).map(_ => true)
       }
     }
   }
@@ -309,40 +291,11 @@ class CRUDServiceFS @Inject()(tbg: NbgToggler)(implicit ec: ExecutionContext, sy
   def putOverwrites(infotons: Vector[Infoton]): Future[Boolean] = {
     val cmds = infotons.map(OverwriteCommand(_))
     val bulks = cmds.grouped(maxBulkSize)
-    val tLogWrites = if(oldBGFlag) {
-      Future.traverse(bulks) { vec =>
-        // build a command with vec of commands
-        val cmdBulk = BulkCommand(vec.toList)
-        // convert bulk command to Array[Byte] payload
-        val payload: Array[Byte] = CommandSerializer.encode(cmdBulk)
-        // write payload to tlog
-        updatesTlog.write(payload)
-      }.map(_ => true)
-    } else Future.successful(true)
-
-    val kafkaWritesRes = if(newBGFlag || newBG) {
-      Future.traverse(cmds)(sendToKafka(_)).map{_ => true}
-    } else Future.successful(true)
-
-    tLogWrites.zip(kafkaWritesRes).map{_ => true}
+    Future.traverse(cmds)(sendToKafka(_)).map{_ => true}
 
   }
 
   def putInfotons(infotons: Vector[Infoton], tid: Option[String] = None, atomicUpdates: Map[String,String] = Map.empty, isPriorityWrite: Boolean = false) = {
-    val tLogWriteRes = if(oldBGFlag) {
-      Future.sequence(
-          infotons.map(WriteCommand(_)).grouped(maxBulkSize).map { vec =>
-          // build a command with vec of commands
-          val cmdBulk = BulkCommand(vec.toList)
-          // convert bulk command to Array[Byte] payload
-          val payload: Array[Byte] = CommandSerializer.encode(cmdBulk)
-          // write payload to tlog
-          updatesTlog.write(payload)
-        }
-      ).map{ _ => true}
-    } else Future.successful(true)
-
-    val kafkaWritesRes = if(newBGFlag || newBG) {
       Future.traverse(infotons){
         case infoton if infoton.lastModified.getMillis == 0L =>
           sendToKafka(
@@ -352,9 +305,6 @@ class CRUDServiceFS @Inject()(tbg: NbgToggler)(implicit ec: ExecutionContext, sy
               prevUUID = atomicUpdates.get(infoton.path)), isPriorityWrite)
         case infoton => sendToKafka(WriteCommand(infoton,validTid(infoton.path,tid),atomicUpdates.get(infoton.path)), isPriorityWrite)
       }.map(_ => true)
-    } else Future.successful(true)
-
-    tLogWriteRes.zip(kafkaWritesRes).map{t => t._1 && t._2}
   }
 
   def deleteInfotons(deletes: List[(String, Option[Map[String, Set[FieldValue]]])], tidOpt: Option[String] = None, atomicUpdates: Map[String,String] = Map.empty, isPriorityWrite: Boolean = false) = {
@@ -363,21 +313,7 @@ class CRUDServiceFS @Inject()(tbg: NbgToggler)(implicit ec: ExecutionContext, sy
       case (path, Some(fields)) => DeleteAttributesCommand(path, fields, dt, validTid(path,tidOpt), atomicUpdates.get(path))
       case (path, None) => DeletePathCommand(path, dt, validTid(path,tidOpt), atomicUpdates.get(path))
     }
-
-    val tLogWritesRes = if(oldBGFlag) {
-      Future.sequence(
-        commands.grouped(maxBulkSize).map { cmds =>
-          updatesTlog.write(CommandSerializer.encode(BulkCommand(cmds)))
-        }
-      ).map{ _ => true}
-    } else Future.successful(true)
-
-    val kafkaWritesRes = if(newBGFlag || newBG) {
-      Future.traverse(commands)(sendToKafka(_,isPriorityWrite)).map(_ => true)
-    } else Future.successful(true)
-
-    tLogWritesRes.zip(kafkaWritesRes).map(_ => true)
-
+    Future.traverse(commands)(sendToKafka(_,isPriorityWrite)).map(_ => true)
   }
 
   def deleteInfoton(path: String, data: Option[Map[String, Set[FieldValue]]], isPriorityWrite: Boolean = false) = {
@@ -388,12 +324,8 @@ class CRUDServiceFS @Inject()(tbg: NbgToggler)(implicit ec: ExecutionContext, sy
     }
 
     val payload = CommandSerializer.encode(delCommand)
-    val tLogWriteRes = if(oldBGFlag) updatesTlog.write(payload).map { _ => true } else Future.successful(true)
 
-    val kafkaWriteRes = if(newBGFlag || newBG) sendToKafka(delCommand.path, payload, isPriorityWrite)
-                        else Future.successful(true)
-
-    tLogWriteRes.zip(kafkaWriteRes).map{_ => true}
+    sendToKafka(delCommand.path, payload, isPriorityWrite)
   }
 
   /**
@@ -440,22 +372,10 @@ class CRUDServiceFS @Inject()(tbg: NbgToggler)(implicit ec: ExecutionContext, sy
 
       val commands:List[SingleCommand] = dels ::: ups
 
-      val tLogWritesRes = if(oldBGFlag) {
-        Future.sequence(
-          commands.grouped(maxBulkSize).map { cmds =>
-            updatesTlog.write(CommandSerializer.encode(BulkCommand(cmds)))
-          }
-        ).map{ _ => true}
-      } else Future.successful(true)
-
-      val kafkaWritesRes = if(newBGFlag || newBG) {
         Future.traverse(commands){
           case cmd@UpdatePathCommand(_, _, _, lastModified, _, _) if lastModified.getMillis == 0L => sendToKafka(cmd.copy(lastModified = DateTime.now(DateTimeZone.UTC)), isPriorityWrite)
           case cmd => sendToKafka(cmd, isPriorityWrite)
         }.map{_ => true}
-      } else Future.successful(true)
-
-      tLogWritesRes.zip(kafkaWritesRes).map{_ => true}
     }
   }
 
@@ -495,8 +415,8 @@ class CRUDServiceFS @Inject()(tbg: NbgToggler)(implicit ec: ExecutionContext, sy
                 paginationParams: PaginationParams = DefaultPaginationParams,
                 withHistory: Boolean = false,
                 aggregationFilters: Seq[AggregationFilter],
-                debugInfo: Boolean = false, nbg: Boolean = newBG): Future[AggregationsResponse] = {
-      ftsService(nbg).aggregate(pathFilter, fieldsFilters, datesFilter, paginationParams, aggregationFilters, debugInfo = debugInfo)
+                debugInfo: Boolean = false): Future[AggregationsResponse] = {
+      ftsService.aggregate(pathFilter, fieldsFilters, datesFilter, paginationParams, aggregationFilters, debugInfo = debugInfo)
   }
 
   def thinSearch(pathFilter: Option[PathFilter] = None,
@@ -506,12 +426,10 @@ class CRUDServiceFS @Inject()(tbg: NbgToggler)(implicit ec: ExecutionContext, sy
                  withHistory: Boolean = false,
                  fieldSortParams: SortParam = SortParam.empty,
                  debugInfo: Boolean = false,
-                 withDeleted: Boolean = false,
-                 nbg:Boolean = newBG)(implicit searchTimeout : Option[Duration] = None): Future[SearchThinResults] = {
+                 withDeleted: Boolean = false)(implicit searchTimeout : Option[Duration] = None): Future[SearchThinResults] = {
 
     val searchResultsFuture = {
-      //withDeleted is only available in new FTS, and using it forces nbg
-      ftsService(nbg || withDeleted).thinSearch(pathFilter, fieldFilters, datesFilter, paginationParams,
+      ftsService.thinSearch(pathFilter, fieldFilters, datesFilter, paginationParams,
         fieldSortParams, withHistory, withDeleted = withDeleted, debugInfo = debugInfo, timeout = searchTimeout)
     }
 
@@ -564,12 +482,11 @@ class CRUDServiceFS @Inject()(tbg: NbgToggler)(implicit ec: ExecutionContext, sy
              withData: Boolean = false,
              fieldSortParams: SortParam = SortParam.empty,
              debugInfo: Boolean = false,
-             withDeleted: Boolean = false,
-             nbg:Boolean = newBG)(implicit searchTimeout : Option[Duration] = None): Future[SearchResults] = {
+             withDeleted: Boolean = false)
+            (implicit searchTimeout : Option[Duration] = None): Future[SearchResults] = {
 
     val searchResultsFuture = {
-      //withDeleted is only available in new FTS, and using it forces nbg
-      ftsService(nbg || withDeleted).search(pathFilter, fieldFilters, datesFilter, paginationParams,
+      ftsService.search(pathFilter, fieldFilters, datesFilter, paginationParams,
         fieldSortParams, withHistory, debugInfo = debugInfo, timeout = searchTimeout, withDeleted = withDeleted)
     }
     def ftsResults2Dates(ftsResults: FTSSearchResponse): (Option[DateTime], Option[DateTime]) = {
@@ -584,7 +501,7 @@ class CRUDServiceFS @Inject()(tbg: NbgToggler)(implicit ec: ExecutionContext, sy
       case true => searchResultsFuture.flatMap { ftsResults =>
         val (fromDate, toDate) = ftsResults2Dates(ftsResults)
         val xs = cmwell.util.concurrent.travector(ftsResults.infotons) { i =>
-          irwService(nbg || withDeleted).readUUIDAsync(i.uuid,level).map(_ -> i.fields)
+          irwService.readUUIDAsync(i.uuid,level).map(_ -> i.fields)
         }
 
         xs
@@ -640,13 +557,13 @@ class CRUDServiceFS @Inject()(tbg: NbgToggler)(implicit ec: ExecutionContext, sy
     }
   }
 
-  def getListOfDC(nbg: Boolean = newBG): Future[Seq[String]] = {
-    ftsService(nbg).listChildren("/meta/sys/dc",0,20).map { sr =>
+  def getListOfDC(): Future[Seq[String]] = {
+    ftsService.listChildren("/meta/sys/dc",0,20).map { sr =>
       Settings.dataCenter +: sr.infotons.map(_.path.drop("/meta/sys/dc/".length))
     }
   }
 
-  def getLastIndexTimeFor(dc: String = Settings.dataCenter, nbg: Boolean, fieldFilters: Option[FieldFilter]): Future[Option[VirtualInfoton]] = {
+  def getLastIndexTimeFor(dc: String = Settings.dataCenter, fieldFilters: Option[FieldFilter]): Future[Option[VirtualInfoton]] = {
 
     def mkVirtualInfoton(indexTime: Long): VirtualInfoton = {
       val fields = Map("lastIdxT" -> Set[FieldValue](FLong(indexTime)),
@@ -655,14 +572,14 @@ class CRUDServiceFS @Inject()(tbg: NbgToggler)(implicit ec: ExecutionContext, sy
       VirtualInfoton(ObjectInfoton(s"/proc/dc/$dc", Settings.dataCenter, None, fieldsWithFilter))
     }
 
-    ftsService(nbg).getLastIndexTimeFor(dc, fieldFilters = fieldFilters).map(lOpt => Some(mkVirtualInfoton(lOpt.getOrElse(0L))))
+    ftsService.getLastIndexTimeFor(dc, fieldFilters = fieldFilters).map(lOpt => Some(mkVirtualInfoton(lOpt.getOrElse(0L))))
   }
 
-  def getESFieldsVInfoton(nbg: Boolean = newBG): Future[VirtualInfoton] = {
-    val fields = ESMappingsCache(nbg).getAndUpdateIfNeeded.map(toFieldValues)
+  def getESFieldsVInfoton(): Future[VirtualInfoton] = {
+    val fields = ESMappingsCache.getAndUpdateIfNeeded.map(toFieldValues)
 
     fields.flatMap { f =>
-      val predicates = metaNsCache(nbg).getAndUpdateIfNeeded.map(toFieldValues)
+      val predicates = metaNsCache.getAndUpdateIfNeeded.map(toFieldValues)
       predicates.map { p =>
         VirtualInfoton(ObjectInfoton(s"/proc/fields", Settings.dataCenter, None, Map("fields" -> f, "predicates" -> p)))
       }
@@ -678,10 +595,8 @@ class CRUDServiceFS @Inject()(tbg: NbgToggler)(implicit ec: ExecutionContext, sy
                   scrollTTL: Long,
                   withHistory: Boolean = false,
                   withDeleted: Boolean = false,
-                  debugInfo: Boolean = false,
-                  nbg:Boolean = false): Future[IterationResults] = {
-    //withDeleted is only available in new FTS, and using it forces nbg
-    ftsService(nbg || withDeleted).startScroll(pathFilter, fieldsFilters, datesFilter, paginationParams, scrollTTL, withHistory, withDeleted, debugInfo = debugInfo).map { ftsResults =>
+                  debugInfo: Boolean = false): Future[IterationResults] = {
+    ftsService.startScroll(pathFilter, fieldsFilters, datesFilter, paginationParams, scrollTTL, withHistory, withDeleted, debugInfo = debugInfo).map { ftsResults =>
       IterationResults(ftsResults.scrollId, ftsResults.total, debugInfo = ftsResults.searchQueryStr)
     }
   }
@@ -692,10 +607,8 @@ class CRUDServiceFS @Inject()(tbg: NbgToggler)(implicit ec: ExecutionContext, sy
                        paginationParams: PaginationParams = DefaultPaginationParams,
                        scrollTTL: Long,
                        withHistory: Boolean = false,
-                       withDeleted: Boolean = false,
-                       nbg: Boolean = false): Seq[Future[IterationResults]] = {
-    //withDeleted is only available in new FTS, and using it forces nbg
-    ftsService(nbg || withDeleted).startSuperScroll(pathFilter, fieldFilters, datesFilter, paginationParams, scrollTTL, withHistory, withDeleted).map(_.map { ftsResults =>
+                       withDeleted: Boolean = false): Seq[Future[IterationResults]] = {
+    ftsService.startSuperScroll(pathFilter, fieldFilters, datesFilter, paginationParams, scrollTTL, withHistory, withDeleted).map(_.map { ftsResults =>
       IterationResults(ftsResults.scrollId, ftsResults.total)
     })
   }
@@ -706,10 +619,8 @@ class CRUDServiceFS @Inject()(tbg: NbgToggler)(implicit ec: ExecutionContext, sy
                             paginationParams: PaginationParams = DefaultPaginationParams,
                             scrollTTL: Long,
                             withHistory: Boolean = false,
-                            withDeleted: Boolean = false,
-                            nbg: Boolean = false): Seq[Future[IterationResults]] = {
-    //withDeleted is only available in new FTS, and using it forces nbg
-    ftsService(nbg || withDeleted).startSuperMultiScroll(pathFilter, fieldFilters, datesFilter, paginationParams, scrollTTL, withHistory, withDeleted).map(_.map { ftsResults =>
+                            withDeleted: Boolean = false): Seq[Future[IterationResults]] = {
+    ftsService.startSuperMultiScroll(pathFilter, fieldFilters, datesFilter, paginationParams, scrollTTL, withHistory, withDeleted).map(_.map { ftsResults =>
       IterationResults(ftsResults.scrollId, ftsResults.total)
     })
   }
@@ -720,23 +631,21 @@ class CRUDServiceFS @Inject()(tbg: NbgToggler)(implicit ec: ExecutionContext, sy
                        paginationParams: PaginationParams = DefaultPaginationParams,
                        scrollTTL: Long,
                        withHistory: Boolean = false,
-                       withDeleted: Boolean = false,
-                       nbg: Boolean = false): Seq[Future[IterationResults]] = {
-    //withDeleted is only available in new FTS, and using it forces nbg
-    ftsService(nbg || withDeleted).startMultiScroll(pathFilter, fieldFilters, datesFilter, paginationParams, scrollTTL, withHistory, withDeleted).map(_.map { ftsResults =>
+                       withDeleted: Boolean = false): Seq[Future[IterationResults]] = {
+    ftsService.startMultiScroll(pathFilter, fieldFilters, datesFilter, paginationParams, scrollTTL, withHistory, withDeleted).map(_.map { ftsResults =>
       IterationResults(ftsResults.scrollId, ftsResults.total)
     })
   }
 
-  def scroll(scrollId: String, scrollTTL: Long, withData: Boolean, nbg: Boolean = false): Future[IterationResults] = {
+  def scroll(scrollId: String, scrollTTL: Long, withData: Boolean): Future[IterationResults] = {
 
-    val searchResultFuture = ftsService(nbg).scroll(scrollId, scrollTTL)
+    val searchResultFuture = ftsService.scroll(scrollId, scrollTTL)
     val results = withData match {
       case false => searchResultFuture.map { ftsResults =>
         IterationResults(ftsResults.scrollId, ftsResults.total, Some(ftsResults.infotons))
       }
       case true => searchResultFuture.flatMap { ftsResults =>
-        irwService(nbg).readUUIDSAsync(ftsResults.infotons.map {
+        irwService.readUUIDSAsync(ftsResults.infotons.map {
           _.uuid
         }.toVector, level).map { infotonsSeq =>
           if(infotonsSeq.exists(_.isEmpty)) {
@@ -752,181 +661,177 @@ class CRUDServiceFS @Inject()(tbg: NbgToggler)(implicit ec: ExecutionContext, sy
     results
   }
 
-  def verify(path: String, limit: Int, nbg: Boolean = newBG): Future[Boolean] = proxyOps(nbg).verify(path,limit)
+//  def verify(path: String, limit: Int, nbg: Boolean = newBG): Future[Boolean] = proxyOps(nbg).verify(path,limit)
 
-  def fix(path: String, limit: Int, nbg: Boolean = newBG): Future[(Boolean, String)] = {
-    logger.debug(s"x-fix invoked for path $path")
-    proxyOps(nbg).fix(path, cmwell.ws.Settings.xFixNumRetries,limit)
+//  def fix(path: String, limit: Int, nbg: Boolean = newBG): Future[(Boolean, String)] = {
+//    logger.debug(s"x-fix invoked for path $path")
+//    proxyOps(nbg).fix(path, cmwell.ws.Settings.xFixNumRetries,limit)
+//  }
+//
+//  def rFix(path: String, parallelism: Int = 1, nbg: Boolean = newBG): Future[Source[(Boolean,String),NotUsed]] = {
+//    logger.debug(s"x-fix&reactive invoked for path $path")
+//    proxyOps(nbg).rFix(path, cmwell.ws.Settings.xFixNumRetries, parallelism)
+//  }
+//
+//  def info(path: String, limit: Int, nbg: Boolean = newBG): Future[(CasInfo, EsExtendedInfo, ZStoreInfo)] = proxyOps(nbg).info(path,limit)
+//
+//  def fixDc(path: String, actualDc: String, nbg: Boolean = newBG): Future[Boolean] = {
+//    proxyOps(nbg).fixDc(path, actualDc, cmwell.ws.Settings.xFixNumRetries)
+//  }
+
+  def getRawCassandra(uuid: String): Future[(String,String)] = {
+    irwService.getRawRow(uuid).map(_ -> "text/csv;charset=UTF-8")
   }
 
-  def rFix(path: String, parallelism: Int = 1, nbg: Boolean = newBG): Future[Source[(Boolean,String),NotUsed]] = {
-    logger.debug(s"x-fix&reactive invoked for path $path")
-    proxyOps(nbg).rFix(path, cmwell.ws.Settings.xFixNumRetries, parallelism)
-  }
+  def reactiveRawCassandra(uuid: String): Source[String,NotUsed] = irwService.getReactiveRawRow(uuid,QUORUM)
 
-  def info(path: String, limit: Int, nbg: Boolean = newBG): Future[(CasInfo, EsExtendedInfo, ZStoreInfo)] = proxyOps(nbg).info(path,limit)
-
-  def fixDc(path: String, actualDc: String, nbg: Boolean = newBG): Future[Boolean] = {
-    proxyOps(nbg).fixDc(path, actualDc, cmwell.ws.Settings.xFixNumRetries)
-  }
-
-  def getRawCassandra(uuid: String, nbg: Boolean = newBG): Future[(String,String)] = {
-    val (irw,mime) = irwService(nbg) match {
-      case irw@`_irwService2` => irw -> "text/csv;charset=UTF-8"
-      case irw@`_irwService` => irw -> "application/json;charset=UTF-8"
-    }
-    irw.getRawRow(uuid).map(_ -> mime)
-  }
-
-  def reactiveRawCassandra(uuid: String): Source[String,NotUsed] = _irwService2.getReactiveRawRow(uuid,QUORUM)
-
-  // assuming not the only version of the infoton!
-  def purgeUuid(infoton: Infoton): Future[Unit] = {
-    cmwell.util.concurrent.travector(Vector(oldServices,newServices)){ case (irwService, ftsService) =>
-      irwService.purgeHistorical(infoton, isOnlyVersion = false, QUORUM).flatMap { _ =>
-        ftsService.purge(infoton.uuid).map(_ => Unit)
-      }
-    }.map(_=> Unit)
-  }
-
-  def purgeUuidFromIndex(uuid: String, index: String, nbg: Boolean = newBG): Future[Unit] = {
-    ftsService(nbg).purgeByUuidsAndIndexes(Vector(uuid->index)).map(_ => ()) //TODO also purge from ftsServiceNew
-  }
-
-  def purgePath(path: String, includeLast: Boolean, limit: Int, nbg: Boolean = newBG): Future[Unit] = {
-
-    import scala.language.postfixOps
-
-    cmwell.util.concurrent.travector(Vector(oldServices, newServices)) { case (irwService, ftsService) =>
-
-      val casHistory = irwService.history(path, limit)
-      val lastOpt = if (casHistory.nonEmpty) Some(casHistory.maxBy(_._1)) else None
-
-      // union uuids from es and cas (and keeping indexes, if known):
-      val allPossibleUuidsFut = ftsService.info(path, DefaultPaginationParams, withHistory = true).map { esInfo =>
-        val allUuids = casHistory.map(_._2).toSet ++ esInfo.map(_._1).toSet
-        if (includeLast || lastOpt.isEmpty)
-          esInfo -> allUuids
-        else
-          esInfo.filterNot(_._1 == lastOpt.get._2) -> (allUuids - lastOpt.get._2)
-      }
-
-      cmwell.util.concurrent.retry(3, 1.seconds) {
-
-        allPossibleUuidsFut.flatMap { case allUuids =>
-          val (uuidsWithIndexes, justUuids) = allUuids
-
-          val purgeJustByUuids = {
-            if (justUuids.nonEmpty)
-              ftsService.purgeByUuidsFromAllIndexes(justUuids.toVector)
-            else
-              Future.successful(new BulkResponse(Array(), 0))
-          }
-
-          purgeJustByUuids.flatMap { bulkResponse =>
-            if (bulkResponse.hasFailures) {
-              throw new Exception("purge from es by uuids from all Indexes failed: " + bulkResponse.buildFailureMessage())
-            } else {
-              if (uuidsWithIndexes.nonEmpty)
-                ftsService.purgeByUuidsAndIndexes(uuidsWithIndexes.toVector)
-              else
-                Future.successful(new BulkResponse(Array(), 0))
-            }.flatMap { bulkResponse =>
-              if (bulkResponse.hasFailures) {
-                throw new Exception("purge from es by uuids on specific Indexes failed: " + bulkResponse.buildFailureMessage())
-              } else {
-                val purgeHistoryFut =
-                  if (includeLast || lastOpt.isEmpty) {
-                    // no need to delete from Paths one by one, will delete entire row when purgeHistorical below will be invoked with isOnlyVersion=true
-                    Future.traverse(casHistory.map(_._2))(irwService.purgeFromInfotonsOnly(_))
-                  } else {
-                    Future.traverse(casHistory.filter(lastOpt.get !=)) {
-                      h => irwService.purgeHistorical(path, h._2, h._1, isOnlyVersion = false, level = ConsistencyLevel.QUORUM)
-                    }
-                  }
-
-                val purgeHistoryForDanglingInfotonsFut = {
-                  val danglingUuids = justUuids -- casHistory.map(_._2).toSet
-                  Future.traverse(danglingUuids)(irwService.purgeFromInfotonsOnly(_))
-                }
-
-                if (includeLast && lastOpt.isDefined)
-                  purgeHistoryFut.
-                    flatMap(_ => purgeHistoryForDanglingInfotonsFut).
-                    flatMap(_ => irwService.purgeHistorical(path, lastOpt.get._2, lastOpt.get._1, isOnlyVersion = true, level = ConsistencyLevel.QUORUM))
-                else purgeHistoryFut.
-                  flatMap(_ => purgeHistoryForDanglingInfotonsFut).
-                  map(_ => ())
-              }
-            }
-          }
-        }
-      }
-    }.map(_ => ())
-  }
+//  // assuming not the only version of the infoton!
+//  def purgeUuid(infoton: Infoton): Future[Unit] = {
+//    cmwell.util.concurrent.travector(Vector(oldServices,newServices)){ case (irwService, ftsService) =>
+//      irwService.purgeHistorical(infoton, isOnlyVersion = false, QUORUM).flatMap { _ =>
+//        ftsService.purge(infoton.uuid).map(_ => Unit)
+//      }
+//    }.map(_=> Unit)
+//  }
+//
+//  def purgeUuidFromIndex(uuid: String, index: String, nbg: Boolean = newBG): Future[Unit] = {
+//    ftsService.purgeByUuidsAndIndexes(Vector(uuid->index)).map(_ => ()) //TODO also purge from FTSService
+//  }
+//
+//  def purgePath(path: String, includeLast: Boolean, limit: Int, nbg: Boolean = newBG): Future[Unit] = {
+//
+//    import scala.language.postfixOps
+//
+//    cmwell.util.concurrent.travector(Vector(oldServices, newServices)) { case (irwService, ftsService) =>
+//
+//      val casHistory = irwService.history(path, limit)
+//      val lastOpt = if (casHistory.nonEmpty) Some(casHistory.maxBy(_._1)) else None
+//
+//      // union uuids from es and cas (and keeping indexes, if known):
+//      val allPossibleUuidsFut = ftsService.info(path, DefaultPaginationParams, withHistory = true).map { esInfo =>
+//        val allUuids = casHistory.map(_._2).toSet ++ esInfo.map(_._1).toSet
+//        if (includeLast || lastOpt.isEmpty)
+//          esInfo -> allUuids
+//        else
+//          esInfo.filterNot(_._1 == lastOpt.get._2) -> (allUuids - lastOpt.get._2)
+//      }
+//
+//      cmwell.util.concurrent.retry(3, 1.seconds) {
+//
+//        allPossibleUuidsFut.flatMap { case allUuids =>
+//          val (uuidsWithIndexes, justUuids) = allUuids
+//
+//          val purgeJustByUuids = {
+//            if (justUuids.nonEmpty)
+//              ftsService.purgeByUuidsFromAllIndexes(justUuids.toVector)
+//            else
+//              Future.successful(new BulkResponse(Array(), 0))
+//          }
+//
+//          purgeJustByUuids.flatMap { bulkResponse =>
+//            if (bulkResponse.hasFailures) {
+//              throw new Exception("purge from es by uuids from all Indexes failed: " + bulkResponse.buildFailureMessage())
+//            } else {
+//              if (uuidsWithIndexes.nonEmpty)
+//                ftsService.purgeByUuidsAndIndexes(uuidsWithIndexes.toVector)
+//              else
+//                Future.successful(new BulkResponse(Array(), 0))
+//            }.flatMap { bulkResponse =>
+//              if (bulkResponse.hasFailures) {
+//                throw new Exception("purge from es by uuids on specific Indexes failed: " + bulkResponse.buildFailureMessage())
+//              } else {
+//                val purgeHistoryFut =
+//                  if (includeLast || lastOpt.isEmpty) {
+//                    // no need to delete from Paths one by one, will delete entire row when purgeHistorical below will be invoked with isOnlyVersion=true
+//                    Future.traverse(casHistory.map(_._2))(irwService.purgeFromInfotonsOnly(_))
+//                  } else {
+//                    Future.traverse(casHistory.filter(lastOpt.get !=)) {
+//                      h => irwService.purgeHistorical(path, h._2, h._1, isOnlyVersion = false, level = ConsistencyLevel.QUORUM)
+//                    }
+//                  }
+//
+//                val purgeHistoryForDanglingInfotonsFut = {
+//                  val danglingUuids = justUuids -- casHistory.map(_._2).toSet
+//                  Future.traverse(danglingUuids)(irwService.purgeFromInfotonsOnly(_))
+//                }
+//
+//                if (includeLast && lastOpt.isDefined)
+//                  purgeHistoryFut.
+//                    flatMap(_ => purgeHistoryForDanglingInfotonsFut).
+//                    flatMap(_ => irwService.purgeHistorical(path, lastOpt.get._2, lastOpt.get._1, isOnlyVersion = true, level = ConsistencyLevel.QUORUM))
+//                else purgeHistoryFut.
+//                  flatMap(_ => purgeHistoryForDanglingInfotonsFut).
+//                  map(_ => ())
+//              }
+//            }
+//          }
+//        }
+//      }
+//    }.map(_ => ())
+//  }
 
   /**
     * Rollback an Infoton means purging last version of it, and, if there exists one or more history versions, make the
     * one with largest lastModified the current version.
     */
-  def rollback(path: String, limit: Int, nbg: Boolean = newBG): Future[Unit] = {
-    case class Version(lastModified: Long, uuid: String)
-
-    cmwell.util.concurrent.travector(Vector(oldServices, newServices)) { case (irwService, ftsService) =>
-
-      irwService.historyAsync(path, limit).map { casHistory =>
-        if (casHistory.isEmpty) Future.successful(())
-        else {
-          val sortedCasHistory = casHistory.sortBy(_._1).map { case (lm, uuid) => Version(lm, uuid) }
-          val last = sortedCasHistory.last
-          val prev = sortedCasHistory.init.lastOption
-
-          def purgeLast(isTherePrev: Boolean) = cmwell.util.concurrent.retry(3, 1.seconds) {
-            irwService.purgeHistorical(path, last.uuid, last.lastModified, isOnlyVersion = !isTherePrev, ConsistencyLevel.QUORUM).flatMap { _ =>
-              ftsService.purgeByUuidsFromAllIndexes(Vector(last.uuid))
-            }
-          }
-
-          def setPrevAsLast(pv: Version) = cmwell.util.concurrent.retry(3, 1.seconds) {
-            irwService.setPathLast(path, new java.util.Date(pv.lastModified), pv.uuid, ConsistencyLevel.QUORUM).flatMap { _ =>
-              irwService.readUUIDAsync(pv.uuid).flatMap { infpot =>
-                val prevInfoton = infpot.getOrElse(throw new RuntimeException(s"Previous infoton for path $path was not found under uuid ${pv.uuid}"))
-                ftsService.purgeByUuidsFromAllIndexes(Vector(pv.uuid)).flatMap { _ =>
-                  ftsService.index(prevInfoton, None)
-                }
-              }
-            }
-          }
-
-          purgeLast(prev.isDefined).flatMap { _ => prev.map(setPrevAsLast).getOrElse(Future.successful(())) }
-        }
-      }
-    }.map(_ => ())
-  }
-
-  def purgePath2(path: String, limit: Int, nbg: Boolean = newBG): Future[Unit] = {
-
-    import cmwell.util.concurrent.retry
-
-    import scala.language.postfixOps
-
-    irwService(nbg).historyAsync(path,limit).map { casHistory =>
-
-      val uuids = casHistory.map(_._2)
-
-      retry(3, 1.seconds) {
-        val purgeEsByUuids = ftsService(nbg).purgeByUuidsFromAllIndexes(uuids)
-        purgeEsByUuids.flatMap { bulkResponse =>
-          if (bulkResponse.hasFailures) {
-            throw new Exception("purge from es by uuids from all Indexes failed: " + bulkResponse.buildFailureMessage())
-          } else {
-            val purgeFromInfoton = Future.traverse(uuids)(irwService(nbg).purgeFromInfotonsOnly(_))
-            purgeFromInfoton.flatMap(_ => irwService(nbg).purgePathOnly(path))
-          }
-        }
-      }
-    }
-  }
+//  def rollback(path: String, limit: Int, nbg: Boolean = newBG): Future[Unit] = {
+//    case class Version(lastModified: Long, uuid: String)
+//
+//    cmwell.util.concurrent.travector(Vector(oldServices, newServices)) { case (irwService, ftsService) =>
+//
+//      irwService.historyAsync(path, limit).map { casHistory =>
+//        if (casHistory.isEmpty) Future.successful(())
+//        else {
+//          val sortedCasHistory = casHistory.sortBy(_._1).map { case (lm, uuid) => Version(lm, uuid) }
+//          val last = sortedCasHistory.last
+//          val prev = sortedCasHistory.init.lastOption
+//
+//          def purgeLast(isTherePrev: Boolean) = cmwell.util.concurrent.retry(3, 1.seconds) {
+//            irwService.purgeHistorical(path, last.uuid, last.lastModified, isOnlyVersion = !isTherePrev, ConsistencyLevel.QUORUM).flatMap { _ =>
+//              ftsService.purgeByUuidsFromAllIndexes(Vector(last.uuid))
+//            }
+//          }
+//
+//          def setPrevAsLast(pv: Version) = cmwell.util.concurrent.retry(3, 1.seconds) {
+//            irwService.setPathLast(path, new java.util.Date(pv.lastModified), pv.uuid, ConsistencyLevel.QUORUM).flatMap { _ =>
+//              irwService.readUUIDAsync(pv.uuid).flatMap { infpot =>
+//                val prevInfoton = infpot.getOrElse(throw new RuntimeException(s"Previous infoton for path $path was not found under uuid ${pv.uuid}"))
+//                ftsService.purgeByUuidsFromAllIndexes(Vector(pv.uuid)).flatMap { _ =>
+//                  ftsService.index(prevInfoton, None)
+//                }
+//              }
+//            }
+//          }
+//
+//          purgeLast(prev.isDefined).flatMap { _ => prev.map(setPrevAsLast).getOrElse(Future.successful(())) }
+//        }
+//      }
+//    }.map(_ => ())
+//  }
+//
+//  def purgePath2(path: String, limit: Int, nbg: Boolean = newBG): Future[Unit] = {
+//
+//    import cmwell.util.concurrent.retry
+//
+//    import scala.language.postfixOps
+//
+//    irwService.historyAsync(path,limit).map { casHistory =>
+//
+//      val uuids = casHistory.map(_._2)
+//
+//      retry(3, 1.seconds) {
+//        val purgeEsByUuids = ftsService.purgeByUuidsFromAllIndexes(uuids)
+//        purgeEsByUuids.flatMap { bulkResponse =>
+//          if (bulkResponse.hasFailures) {
+//            throw new Exception("purge from es by uuids from all Indexes failed: " + bulkResponse.buildFailureMessage())
+//          } else {
+//            val purgeFromInfoton = Future.traverse(uuids)(irwService.purgeFromInfotonsOnly(_))
+//            purgeFromInfoton.flatMap(_ => irwService.purgePathOnly(path))
+//          }
+//        }
+//      }
+//    }
+//  }
 
   //var persistTopicOffset = new AtomicLong()
 

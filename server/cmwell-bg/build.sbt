@@ -24,7 +24,8 @@ libraryDependencies ++= {
       .exclude("org.slf4j", "slf4j-log4j12")
       .exclude("log4j", "log4j"),
     dm("org.codehaus.groovy", "groovy-all"),
-    dm("uk.org.lidalia","sysout-over-slf4j")
+    dm("uk.org.lidalia","sysout-over-slf4j"),
+    dm("pl.allegro.tech","embedded-elasticsearch") % Test
   )
 }
 
@@ -55,6 +56,6 @@ test in Test := Def.taskDyn {
   }
 }.tag(Tags.ES,Tags.Cassandra,Tags.Grid,Tags.Kafka).value
 
-fullTest := (test in Test).dependsOn(fullTest in LocalProject("irw"),fullTest in LocalProject("imp"),fullTest in LocalProject("fts"),fullTest in LocalProject("zstore")).value
+fullTest := (test in Test).dependsOn(fullTest in LocalProject("irw")/*,fullTest in LocalProject("imp")*/,fullTest in LocalProject("fts"),fullTest in LocalProject("zstore")).value
 
 unmanagedResources in Test += packResourceDir.value.keys.head / "logback.xml"
