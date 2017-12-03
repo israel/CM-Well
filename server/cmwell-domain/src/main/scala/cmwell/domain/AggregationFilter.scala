@@ -50,7 +50,7 @@ case class TermAggregationFilter(name:String = "Term Aggregation", override val 
 }
 
 case class HistogramAggregationFilter(name:String = "Histogram Aggregation", override val field:Field, interval:Int, minDocCount:Int,
-                                      extMin:Option[Long], extMax:Option[Long], 
+                                      extMin:Option[Double], extMax:Option[Double],
                                       subFilters:Seq[AggregationFilter] = Seq.empty) extends BucketAggregationFilter {
   override def copyWithSuffix(suffix: String): AggregationFilter = {
     var counter = 0

@@ -21,7 +21,7 @@ getExternalComponents := {
     CMWellBuild.fetchMvnArtifact(casM,scalaVersion.value,scalaBinaryVersion.value)
   }
 
-  val esM = dm("org.elasticsearch", "elasticsearch") artifacts (Artifact("elasticsearch", "tar.gz", "tar.gz")) intransitive()
+  val esM = dm("org.elasticsearch.distribution.zip", "elasticsearch") artifacts (Artifact("elasticsearch", "zip", "zip")) intransitive()
   val esF: scala.concurrent.Future[Seq[java.io.File]] = {
     CMWellBuild.fetchMvnArtifact(esM,scalaVersion.value,scalaBinaryVersion.value)
   }
@@ -93,18 +93,18 @@ getData := {
   Seq(data,docs)
 }
 
-getTlog := {
-  val str = streams.value
-  val bd = baseDirectory.value
-  val tlog = (assembly in LocalProject("tlog") in Compile).value
-
-  str.log.info(s"tlog tool file to copy is: ${tlog.getAbsolutePath}")
-  val destination = bd / "app" / "components" / tlog.getName
-  val filesToDelete = sbt.IO.listFiles(bd / "app" / "components").filter(_.getAbsolutePath.contains("cmwell-tlog_"))
-  filesToDelete.foreach(sbt.IO.delete)
-  sbt.IO.copyFile(tlog,destination,preserveLastModified = true)
-  destination
-}
+//getTlog := {
+//  val str = streams.value
+//  val bd = baseDirectory.value
+//  val tlog = (assembly in LocalProject("tlog") in Compile).value
+//
+//  str.log.info(s"tlog tool file to copy is: ${tlog.getAbsolutePath}")
+//  val destination = bd / "app" / "components" / tlog.getName
+//  val filesToDelete = sbt.IO.listFiles(bd / "app" / "components").filter(_.getAbsolutePath.contains("cmwell-tlog_"))
+//  filesToDelete.foreach(sbt.IO.delete)
+//  sbt.IO.copyFile(tlog,destination,preserveLastModified = true)
+//  destination
+//}
 
 getCons := {
   val str = streams.value
@@ -135,18 +135,18 @@ getWs := {
   destination
 }
 
-getBg := {
-  val str = streams.value
-  val bd = baseDirectory.value
-  val batch = (oneJar in LocalProject("batch") in oneJar).value
-
-  str.log.info(s"bg file to copy is: ${batch.getAbsolutePath}")
-  val destination = bd / "app" / "components" / batch.getName
-  val filesToDelete = sbt.IO.listFiles(bd / "app" / "components").filter(_.getAbsolutePath.contains("cmwell-batch_"))
-  filesToDelete.foreach(sbt.IO.delete)
-  sbt.IO.copyFile(batch,destination,preserveLastModified = true)
-  destination
-}
+//getBg := {
+//  val str = streams.value
+//  val bd = baseDirectory.value
+//  val batch = (oneJar in LocalProject("batch") in oneJar).value
+//
+//  str.log.info(s"bg file to copy is: ${batch.getAbsolutePath}")
+//  val destination = bd / "app" / "components" / batch.getName
+//  val filesToDelete = sbt.IO.listFiles(bd / "app" / "components").filter(_.getAbsolutePath.contains("cmwell-batch_"))
+//  filesToDelete.foreach(sbt.IO.delete)
+//  sbt.IO.copyFile(batch,destination,preserveLastModified = true)
+//  destination
+//}
 
 getDc := {
   val str = streams.value
@@ -268,7 +268,7 @@ getLib := {
   packProject("ctrl",(pack in LocalProject("ctrl") in pack).value,bd, bd / "app" / "conf" / "ctrl",logger)
   packProject("dc",(pack in LocalProject("dc") in pack).value,bd, bd / "app" / "conf" / "dc",logger)
   packProject("ws",(pack in LocalProject("ws") in pack).value,bd, bd / "app" / "conf" / "ws",logger)
-  packProject("batch",(pack in LocalProject("batch") in pack).value,bd, bd / "app" / "conf" / "batch",logger)
+//  packProject("batch",(pack in LocalProject("batch") in pack).value,bd, bd / "app" / "conf" / "batch",logger)
   packProject("bg",(pack in LocalProject("bg") in pack).value,bd, bd / "app" / "conf" / "bg",logger)
   packProject("tlog",(pack in LocalProject("tlog") in pack).value,bd, bd / "app" / "conf" / "tlog",logger)
   packCons((pack in LocalProject("ctrl") in pack).value, getCons.value , bd)

@@ -29,6 +29,7 @@ initialize := {
     sys.error("Java 8 is required for CM-Well!")
 }
 //resolvers in Global += "CM-WELL public" at "http://builder.clearforest.com:8081/nexus/content/groups/public"
+resolvers in ThisBuild += "Local Maven" at Path.userHome.asFile.toURI.toURL + ".m2/repository"
 updateOptions in Global := updateOptions.in(Global).value.withCachedResolution(true).withCircularDependencyLevel(CircularDependencyLevel.Error)
 //updateOptions := updateOptions.value.withCachedResolution(true)
 //updateOptions := updateOptions.value.withCircularDependencyLevel(CircularDependencyLevel.Error)
@@ -133,6 +134,9 @@ dependenciesManager in Global := {
   case ("org.codehaus.plexus","plexus-utils")                      => "org.codehaus.plexus" % "plexus-utils" % "3.0.24"
   case ("org.codehaus.woodstox","woodstox-asl")                    => "org.codehaus.woodstox" % "woodstox-asl" % "3.2.7"
   case ("org.elasticsearch","elasticsearch")                       => "org.elasticsearch" % "elasticsearch" % Versions.elasticsearch
+  case ("org.elasticsearch.client", "transport")                   => "org.elasticsearch.client" % "transport" % Versions.elasticsearch
+  case ("org.elasticsearch.distribution.zip", "elasticsearch")     => "org.elasticsearch.distribution.zip" % "elasticsearch" % Versions.elasticsearch
+  case ("pl.allegro.tech", "embedded-elasticsearch")               => "pl.allegro.tech" % "embedded-elasticsearch" % "2.4.3"
   case ("org.elasticsearch", "metrics-elasticsearch-reporter")     => "org.elasticsearch" % "metrics-elasticsearch-reporter" % "2.0"
   case ("org.hdrhistogram","HdrHistogram")                         => "org.hdrhistogram" % "HdrHistogram" % "2.1.9"
   case ("org.jfarcand","wcs")                                      => "org.jfarcand" % "wcs" % "1.3"
@@ -205,15 +209,15 @@ lazy val fts           = (project in file("cmwell-fts")).enablePlugins(CMWellBui
 lazy val formats       = (project in file("cmwell-formats")).enablePlugins(CMWellBuild)                             dependsOn(domain, common, fts)
 lazy val irw           = (project in file("cmwell-irw")).enablePlugins(CMWellBuild, CassandraPlugin)                dependsOn(dao, domain, common, zstore)
 lazy val tlog          = (project in file("cmwell-tlog")).enablePlugins(CMWellBuild)                                dependsOn(domain, common)
-lazy val imp           = (project in file("cmwell-imp")).enablePlugins(CMWellBuild, CassandraPlugin)                dependsOn(domain, common, tlog, irw, fts % "compile->compile;test->test", rts, zstore)
-lazy val indexer       = (project in file("cmwell-indexer")).enablePlugins(CMWellBuild)                             dependsOn(domain, common, tlog, irw, fts)
-lazy val stortill      = (project in file("cmwell-stortill")).enablePlugins(CMWellBuild)                            dependsOn(domain, irw, fts , imp)
-lazy val batch         = (project in file("cmwell-batch")).enablePlugins(CMWellBuild) settings(oneJarSettings:_*)   dependsOn(imp, indexer, ctrl)
+//lazy val imp           = (project in file("cmwell-imp")).enablePlugins(CMWellBuild, CassandraPlugin)                dependsOn(domain, common, tlog, irw, fts % "compile->compile;test->test", rts, zstore)
+//lazy val indexer       = (project in file("cmwell-indexer")).enablePlugins(CMWellBuild)                             dependsOn(domain, common, tlog, irw, fts)
+lazy val stortill      = (project in file("cmwell-stortill")).enablePlugins(CMWellBuild)                            dependsOn(domain, irw, fts )
+//lazy val batch         = (project in file("cmwell-batch")).enablePlugins(CMWellBuild) settings(oneJarSettings:_*)   dependsOn(imp, indexer, ctrl)
 lazy val bg            = (project in file("cmwell-bg")).enablePlugins(CMWellBuild, SbtKafkaPlugin, CassandraPlugin) dependsOn(kafkaAssigner, irw, domain, fts, grid, zstore, tracking)
-lazy val consIt        = (project in file("cmwell-it")).enablePlugins(CMWellBuild)                                  dependsOn(domain, common % "compile->compile;it->test", tlog, ws) configs(IntegrationTest)
+//lazy val consIt        = (project in file("cmwell-it")).enablePlugins(CMWellBuild)                                  dependsOn(domain, common % "compile->compile;it->test", tlog, ws) configs(IntegrationTest)
 lazy val ctrl          = (project in file("cmwell-controller")).enablePlugins(CMWellBuild)                          dependsOn(tlog,grid)
 lazy val dc            = (project in file("cmwell-dc")).enablePlugins(CMWellBuild, JavaAppPackaging) settings(oneJarSettings:_*)      dependsOn(tracking, ctrl, sparqlAgent)
-lazy val cons          = (project in file("cmwell-cons")).enablePlugins(CMWellBuild)                                dependsOn(util, ctrl) aggregate(batch, ws, ctrl, dc)
+lazy val cons          = (project in file("cmwell-cons")).enablePlugins(CMWellBuild)                                dependsOn(util, ctrl) aggregate(ws, ctrl, dc)
 lazy val pluginGremlin = (project in file("cmwell-plugin-gremlin")).enablePlugins(CMWellBuild)
 lazy val spa           = (project in file("cmwell-spa")) .enablePlugins(CMWellBuild)
 lazy val dataTools     = (project in file("cmwell-data-tools")).enablePlugins(CMWellBuild)
@@ -235,14 +239,14 @@ fullTest := {
   (fullTest in LocalProject("fts")).value
   (fullTest in LocalProject("formats")).value
   (fullTest in LocalProject("irw")).value
-  (fullTest in LocalProject("tlog")).value
-  (fullTest in LocalProject("imp")).value
-  (fullTest in LocalProject("indexer")).value
+//  (fullTest in LocalProject("tlog")).value
+//  (fullTest in LocalProject("imp")).value
+//  (fullTest in LocalProject("indexer")).value
   (fullTest in LocalProject("stortill")).value
-  (fullTest in LocalProject("batch")).value
+//  (fullTest in LocalProject("batch")).value
   (fullTest in LocalProject("bg")).value
   (fullTest in LocalProject("ws")).value
-  (fullTest in LocalProject("consIt")).value
+//  (fullTest in LocalProject("consIt")).value
   (fullTest in LocalProject("ctrl")).value
   (fullTest in LocalProject("dc")).value
   (fullTest in LocalProject("cons")).value

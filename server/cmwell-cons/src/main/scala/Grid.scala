@@ -99,7 +99,7 @@ case class Grid(user : String ,
           home = homeDir,
           resourceManager = esAllocations,
           dir = "es",
-          template = "es.yml",
+          template = "elasticsearch.yml",
           listenAddress = host,
           masterNodes = esMasters,
           sName = "start.sh",
@@ -121,7 +121,7 @@ case class Grid(user : String ,
           home = homeDir,
           resourceManager = esAllocations,
           dir = "es-master",
-          template = "es.yml",
+          template = "elasticsearch.yml",
           listenAddress = host,
           masterNodes = esMasters,
           sName = "start-master.sh",
@@ -182,7 +182,7 @@ case class Grid(user : String ,
           newBg = newBg,
           nbg = nbg,
           seeds = getSeedNodes.mkString(","),
-          seedPort = 9301
+          seedPort = 9300
         )
 
         val cw = CwConf(
@@ -198,7 +198,7 @@ case class Grid(user : String ,
           minMembers = getMinMembers,
           nbg = nbg,
           seeds = getSeedNodes.mkString(","),
-          seedPort = 9301
+          seedPort = 9300
         )
 
         val ctrl = CtrlConf(

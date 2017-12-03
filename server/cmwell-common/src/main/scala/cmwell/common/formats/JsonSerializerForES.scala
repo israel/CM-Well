@@ -105,7 +105,7 @@ object JsonSerializerForES extends AbstractJsonSerializer with NsSplitter with L
 
 
     if(infoton.indexTime.nonEmpty && infoton.dc == SettingsHelper.dataCenter) {
-      logger.debug(s"should not happen when writing a new infoton! indexTime should only be created while indexing, and not before. uuid = ${infoton.uuid}")
+      logger.trace(s"should not happen when writing a new infoton! indexTime should only be created while indexing, and not before. uuid = ${infoton.uuid}")
     }
 
     val idxT = {

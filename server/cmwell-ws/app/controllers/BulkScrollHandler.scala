@@ -195,7 +195,7 @@ class BulkScrollHandler @Inject()(crudServiceFS: CRUDServiceFS,
     }
   }
 
-  def getFormatter(request: Request[AnyContent], withHistory: Boolean, nbg: Boolean) = {
+  def getFormatter(request: Request[AnyContent], withHistory: Boolean) = {
 
     (extractInferredFormatWithData(request) match {
       case (fmt,b) if Set("text", "path", "tsv", "tab", "nt", "ntriples", "nq", "nquads")(fmt.toLowerCase) || fmt.toLowerCase.startsWith("json") => Success(fmt -> b)
@@ -234,8 +234,7 @@ class BulkScrollHandler @Inject()(crudServiceFS: CRUDServiceFS,
             withData = withData,
             withoutMeta = !withMeta,
             filterOutBlanks = true,
-            forceUniqueness = forceUniqueness,
-            nbg = nbg
+            forceUniqueness = forceUniqueness
           ) -> withData.isDefined
         }
       }
@@ -273,8 +272,6 @@ class BulkScrollHandler @Inject()(crudServiceFS: CRUDServiceFS,
       }
     }
 
-    val nbg = request.attrs(Attrs.Nbg)
-
     currStateEither match {
       case Left(err) => Future.successful(BadRequest(err))
       case Right(stateFuture) => stateFuture.flatMap {
@@ -291,27 +288,27 @@ class BulkScrollHandler @Inject()(crudServiceFS: CRUDServiceFS,
                            |withRecursive    = $r """.stripMargin)
           }
 
-          getFormatter(request, h, nbg) match {
+          getFormatter(request, h) match {
             case Failure(exception) => Future.successful(BadRequest(exception.getMessage))
             case Success((formatter, withData)) => {
 
               // Gets a scroll source according to received HTTP request parameters
               def getScrollSource() = {
                 (if (wasSupplied("slow-bulk")) {
-                  streams.scrollSource(nbg,
+                  streams.scrollSource(
                     pathFilter = createPathFilter(path, r),
                     fieldFilters = Option(fieldsFiltersFromTimeframeAndOptionalFilters(from, to, ffOpt)),
                     withHistory = h,
                     withDeleted = d)
                 } else {
-                  streams.superScrollSource(nbg,
+                  streams.superScrollSource(
                     pathFilter = createPathFilter(path, r),
                     fieldFilter = Option(fieldsFiltersFromTimeframeAndOptionalFilters(from, to, ffOpt)),
                     withHistory = h,
                     withDeleted = d)
                 }).map { case (src, hits) =>
                   val s: Source[Infoton, NotUsed] = {
-                    if (withData) src.via(Flows.iterationResultsToFatInfotons(nbg, crudServiceFS))
+                    if (withData) src.via(Flows.iterationResultsToFatInfotons(crudServiceFS))
                     else src.via(Flows.iterationResultsToInfotons)
                   }
                   hits -> s

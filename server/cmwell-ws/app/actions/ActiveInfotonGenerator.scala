@@ -41,8 +41,7 @@ import cmwell.util.FullBox
 import cmwell.web.ld.cmw.CMWellRDFHelper
 import cmwell.ws.util.FieldFilterParser
 import controllers.NbgToggler
-import ld.cmw.{NbgPassiveFieldTypesCache, ObgPassiveFieldTypesCache}
-
+import ld.cmw.PassiveFieldTypesCache
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 import scala.concurrent.{Await, Future}
@@ -64,19 +63,15 @@ class ActiveInfotonGenerator @Inject() (backPressureToggler: controllers.BackPre
 
   import BgMonitoring.{monitor => bgMonitor}
   import dashBoard._
-  lazy val nCache: NbgPassiveFieldTypesCache = crudServiceFS.nbgPassiveFieldTypesCache
-  lazy val oCache: ObgPassiveFieldTypesCache = crudServiceFS.obgPassiveFieldTypesCache
-  def typesCache(nbg: Boolean) = if(nbg || tbg.get) nCache else oCache
+  lazy val typesCache: PassiveFieldTypesCache = crudServiceFS.passiveFieldTypesCache
 
   /**
    * @return /proc/node infoton fields map
    */
   private[this] def nodeValFields: FieldsOpt = {
-    val (uwh,urh,iwh,irh) = BatchStatus.tlogStatus
     val esColor = Try(Await.result(dashBoard.getElasticsearchStatus(), esTimeout)._1.toString).getOrElse("grey")
     Some(Map[String,Set[FieldValue]](
       "pbp" -> Set(FString(backPressureToggler.get)),
-      "nbg" -> Set(FBoolean(crudServiceFS.newBG)),
       "search_contexts_limit" -> Set(FLong(Settings.maxSearchContexts)),
       "cm-well_release" -> Set(FString(BuildInfo.release)),
       "cm-well_version" -> Set(FString(BuildInfo.version)),
@@ -85,7 +80,7 @@ class ActiveInfotonGenerator @Inject() (backPressureToggler: controllers.BackPre
       "sbt_version" -> Set(FString(BuildInfo.sbtVersion)),
       "cassandra_version" -> Set(FString(BuildInfo.cassandraVersion)),
       "elasticsearch_version" -> Set(FString(BuildInfo.elasticsearchVersion)),
-      "es_cluster_name" -> Set(FString(cmwell.fts.Settings.clusterName)),
+//      "es_cluster_name" -> Set(FString(cmwell.fts.Settings.clusterName)), //TODO get clustername
       "build_machine" -> Set(FString(BuildInfo.buildMachine)),
       "build_time" -> Set(FDate(BuildInfo.buildTime)),
       "encoding_version" -> Set(FString(BuildInfo.encodingVersion)),
@@ -100,10 +95,6 @@ class ActiveInfotonGenerator @Inject() (backPressureToggler: controllers.BackPre
       "os_version" ->  Set(FString(System.getProperty("os.version"))),
       "user_timezone" ->  Set(FString(System.getProperty("user.timezone"))),
       "machine_name" ->  Set(FString(Props.machineName)),
-      "tlog_update_write_head" -> Set(FLong(uwh)),
-      "tlog_update_read_head" -> Set(FLong(urh)),
-      "tlog_index_write_head" -> Set(FLong(iwh)),
-      "tlog_index_read_head" -> Set(FLong(irh)),
       "batch_color" -> Set(FString(BatchStatus.batchColor.toString)),
       "es_color" -> Set(FString(esColor))
     ))
@@ -603,7 +594,7 @@ ${lines.mkString("\n")}
   import scala.language.implicitConversions
 
 
-  def generateInfoton(host: String, path: String, now: Long, length: Int = 0, offset: Int = 0, isRoot : Boolean = false, nbg: Boolean = false, fieldFilters: Option[FieldFilter]): Future[Option[VirtualInfoton]] = {
+  def generateInfoton(host: String, path: String, now: Long, length: Int = 0, offset: Int = 0, isRoot : Boolean = false, fieldFilters: Option[FieldFilter]): Future[Option[VirtualInfoton]] = {
 
     val d: DateTime = new DateTime(now)
 
@@ -625,7 +616,7 @@ ${lines.mkString("\n")}
           qp
             .fold(Success(None): Try[Option[RawFieldFilter]])(FieldFilterParser.parseQueryParams(_).map(Some.apply))
             .map { qpOpt =>
-              val fieldsFiltersFut = qpOpt.fold[Future[Option[FieldFilter]]](Future.successful(Option.empty[FieldFilter]))(rff => RawFieldFilter.eval(rff, typesCache(nbg), cmwellRDFHelper, nbg).map(Some.apply))
+              val fieldsFiltersFut = qpOpt.fold[Future[Option[FieldFilter]]](Future.successful(Option.empty[FieldFilter]))(rff => RawFieldFilter.eval(rff, typesCache, cmwellRDFHelper).map(Some.apply))
               fieldsFiltersFut
             }
             .get
@@ -633,7 +624,7 @@ ${lines.mkString("\n")}
         case _ =>
           Future.successful((dcId, fieldFilters))
       }
-        .flatMap { case (id, fieldFilter) => crudServiceFS.getLastIndexTimeFor(id, nbg, fieldFilter) }
+        .flatMap { case (id, fieldFilter) => crudServiceFS.getLastIndexTimeFor(id, fieldFilter) }
     }
 
     path.dropTrailingChars('/') match {
@@ -644,7 +635,7 @@ ${lines.mkString("\n")}
       case "/proc/node" => Some(VirtualInfoton(ObjectInfoton(path, dc, None, d, nodeValFields)))
       case "/proc/dc" => compoundDC
       case p if p.startsWith("/proc/dc/") => getDcInfo(p)
-      case "/proc/fields" => crudServiceFS.getESFieldsVInfoton(nbg).map(Some.apply)
+      case "/proc/fields" => crudServiceFS.getESFieldsVInfoton().map(Some.apply)
       case "/proc/health" => Some(VirtualInfoton(ObjectInfoton(path, dc, None, d, generateHealthFields)))
       case "/proc/health.md" => Some(VirtualInfoton(FileInfoton(path, dc, None, content = Some(FileContent(generateHealthMarkdown(d).getBytes, "text/x-markdown")))))
       case "/proc/health-detailed" => Some(VirtualInfoton(ObjectInfoton(path, dc, None, d, generateHealthDetailedFields)))

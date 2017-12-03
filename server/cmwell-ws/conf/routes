@@ -16,7 +16,7 @@ GET         /_auth            controllers.Application.handleAuthGet
 GET         /_hcn             controllers.Application.handlePoisonPill
 GET         /_tbg             controllers.NbgController.handleToggle
 GET         /_cas/*path       controllers.Application.handleRawRow(path)
-GET         /_es/:uuid        controllers.Application.handleRawDoc(uuid: String)
+#GET         /_es/:uuid        controllers.Application.handleRawDoc(uuid: String)
 GET         /_es/:index/:uuid controllers.Application.handleRawDocWithIndex(index: String, uuid: String)
 GET         /_ll              controllers.LogLevelHandler.handleSetLogLevel
 GET         /_consume         controllers.Application.handleConsumeRoute
@@ -56,7 +56,7 @@ GET         /health/zk-ruok         controllers.Health.getZkRuok
 GET         /health/zk-mntr         controllers.Health.getZkMntr
 GET         /health/ws              controllers.Health.getWsHealth
 GET         /ws/_out                controllers.OutputHandler.handleWebSocket(format: String)
-GET         /ii/*uuid               controllers.Application.handleUuidGET(uuid)
+#GET         /ii/*uuid               controllers.Application.handleUuidGET(uuid)
 GET         /zz                     controllers.Application.handleZzGET(key = "")
 GET         /zz/*key                controllers.Application.handleZzGET(key)
 GET         /proc                   controllers.Application.handleProcGET(path = "/proc")

@@ -102,18 +102,18 @@ object Streams extends LazyLogging {
       }
     }
 
-    def searchThinResultToFatInfoton(nbg: Boolean, crudServiceFS: CRUDServiceFS): Flow[SearchThinResult,Infoton,NotUsed] = Flow[SearchThinResult]
-      .mapAsyncUnordered(parallelism)(str => crudServiceFS.getInfotonByUuidAsync(str.uuid, nbg))
+    def searchThinResultToFatInfoton(crudServiceFS: CRUDServiceFS): Flow[SearchThinResult,Infoton,NotUsed] = Flow[SearchThinResult]
+      .mapAsyncUnordered(parallelism)(str => crudServiceFS.getInfotonByUuidAsync(str.uuid))
       .collect{ case FullBox(i) => i}
 
-    def searchThinResultsToFatInfotons(nbg: Boolean, crudServiceFS: CRUDServiceFS): Flow[SearchThinResults,Infoton,NotUsed] = Flow[SearchThinResults]
+    def searchThinResultsToFatInfotons(crudServiceFS: CRUDServiceFS): Flow[SearchThinResults,Infoton,NotUsed] = Flow[SearchThinResults]
       .mapConcat { case SearchThinResults(_, _, _, str, _) => str.toList }
-      .via(searchThinResultToFatInfoton(nbg,crudServiceFS))
+      .via(searchThinResultToFatInfoton(crudServiceFS))
 
-    def iterationResultsToFatInfotons(nbg: Boolean, crudServiceFS: CRUDServiceFS): Flow[IterationResults,Infoton,NotUsed] = Flow[IterationResults]
+    def iterationResultsToFatInfotons(crudServiceFS: CRUDServiceFS): Flow[IterationResults,Infoton,NotUsed] = Flow[IterationResults]
       .collect { case IterationResults(_, _, Some(iSeq), _, _) => iSeq}
       .mapConcat(_.map(_.uuid)(bo1))
-      .mapAsyncUnordered(parallelism)(crudServiceFS.getInfotonByUuidAsync(_,nbg))
+      .mapAsyncUnordered(parallelism)(crudServiceFS.getInfotonByUuidAsync(_))
       .collect{ case FullBox(i) => i}
 
     val iterationResultsToInfotons: Flow[IterationResults,Infoton,NotUsed] = Flow[IterationResults]
@@ -132,13 +132,12 @@ class Streams @Inject()(crudServiceFS: CRUDServiceFS) extends LazyLogging {
                                withData: Boolean = false,
                                withHistory: Boolean = false,
                                length: Option[Long] = None,
-                               fieldsMask: Set[String] = Set.empty,
-                               nbg: Boolean): Source[ByteString, NotUsed] = {
+                               fieldsMask: Set[String] = Set.empty): Source[ByteString, NotUsed] = {
     if (!withData) src.via(Flows.formattableToByteString(formatter,length))
     else {
 
-      val s1: Source[Infoton, NotUsed] = length.fold(src.via(Flows.iterationResultsToFatInfotons(nbg,crudServiceFS))){ l =>
-        src.via(Flows.iterationResultsToFatInfotons(nbg,crudServiceFS)).take(l)
+      val s1: Source[Infoton, NotUsed] = length.fold(src.via(Flows.iterationResultsToFatInfotons(crudServiceFS))){ l =>
+        src.via(Flows.iterationResultsToFatInfotons(crudServiceFS)).take(l)
       }
 
       val s2: Source[Infoton, NotUsed] = {
@@ -157,18 +156,17 @@ class Streams @Inject()(crudServiceFS: CRUDServiceFS) extends LazyLogging {
                       paginationParams: PaginationParams,
                       scrollTTL: Long,
                       withHistory: Boolean,
-                      withDeleted: Boolean,
-                      nbg: Boolean)
+                      withDeleted: Boolean)
                      (applyScrollStarter: ScrollStarter => Seq[Future[IterationResults]])
                      (implicit ec: ExecutionContext): Future[(Source[IterationResults,NotUsed],Long)] = {
-    seqScrollSource(ScrollStarter(pathFilter,fieldFilter,datesFilter,paginationParams,scrollTTL,withHistory,withDeleted,nbg || withDeleted))(applyScrollStarter)(ec)
+    seqScrollSource(ScrollStarter(pathFilter,fieldFilter,datesFilter,paginationParams,scrollTTL,withHistory,withDeleted))(applyScrollStarter)(ec)
   }
   def seqScrollSource(scrollStarter: ScrollStarter)
                      (applyScrollStarter: ScrollStarter => Seq[Future[IterationResults]])
                      (implicit ec: ExecutionContext): Future[(Source[IterationResults,NotUsed],Long)] = {
     val firstHitsTuple = applyScrollStarter(scrollStarter)
       .map(_.map { startScrollResult => //map the `Future[IterationResults]` (empty initial results) to a tuple of another `Future[IterationResults]` (this time with data) and the number of total hits for that index
-        crudServiceFS.scroll(startScrollResult.iteratorId, 360, false, scrollStarter.nbg || scrollStarter.withDeleted) -> startScrollResult.totalHits
+        crudServiceFS.scroll(startScrollResult.iteratorId, 360, false) -> startScrollResult.totalHits
       })
 
     //let's extract from the complicated firstHitsTuple the sequence(per index) of futures of the first scroll results
@@ -182,7 +180,7 @@ class Streams @Inject()(crudServiceFS: CRUDServiceFS) extends LazyLogging {
             infotonsOpt
               .collect { case xs if xs.nonEmpty => ir }
               .fold(Future.successful(Option.empty[(IterationResults,IterationResults)])){ ir =>
-                crudServiceFS.scroll(iteratorId, 60, withData = false, scrollStarter.nbg || scrollStarter.withDeleted).map(iir => Some(iir -> ir))
+                crudServiceFS.scroll(iteratorId, 60, withData = false).map(iir => Some(iir -> ir))
               }
         } -> hits
       }
@@ -204,15 +202,15 @@ class Streams @Inject()(crudServiceFS: CRUDServiceFS) extends LazyLogging {
                         datesFilter: Option[DatesFilter] = None,
                         paginationParams: PaginationParams = DefaultPaginationParams,
                         withHistory: Boolean = false,
-                        withDeleted: Boolean = false,
-                        nbg: Boolean = false)(implicit ec: ExecutionContext): Future[(Source[IterationResults,NotUsed],Long)] = {
-    seqScrollSource(ScrollStarter(pathFilter,fieldFilter,datesFilter,paginationParams,120,withHistory,withDeleted,nbg)){
-      case ScrollStarter(pf,ff,df,pp,ttl,h,d,nbg) =>
-        crudServiceFS.startMultiScroll(pf,ff,df,pp,ttl,h,d,nbg || withDeleted)
+                        withDeleted: Boolean = false)
+                       (implicit ec: ExecutionContext): Future[(Source[IterationResults,NotUsed],Long)] = {
+    seqScrollSource(ScrollStarter(pathFilter,fieldFilter,datesFilter,paginationParams,120,withHistory,withDeleted)){
+      case ScrollStarter(pf,ff,df,pp,ttl,h,d) =>
+        crudServiceFS.startMultiScroll(pf,ff,df,pp,ttl,h,d)
     }
   }
 
-  def scrollSource(nbg: Boolean,
+  def scrollSource(
                    pathFilter: Option[PathFilter] = None,
                    fieldFilters: Option[FieldFilter] = None,
                    datesFilter: Option[DatesFilter] = None,
@@ -231,7 +229,6 @@ class Streams @Inject()(crudServiceFS: CRUDServiceFS) extends LazyLogging {
       scrollTTL = scrollTTL,
       withHistory = withHistory,
       withDeleted = withDeleted,
-      nbg = nbg || withDeleted,
       debugInfo = debugLogID.isDefined
     ).flatMap { startScrollResult =>
       debugLogID.foreach(id => logger.info(s"[$id] startScrollResult: $startScrollResult"))
@@ -250,7 +247,7 @@ class Streams @Inject()(crudServiceFS: CRUDServiceFS) extends LazyLogging {
               .filter(_.nonEmpty)
               .fold(Future.successful(Option.empty[(IterationResults, IterationResults)])) { _ =>
                 debugLogID.foreach(id => logger.info(s"[$id] scroll request: $iteratorId"))
-                crudServiceFS.scroll(iteratorId, scrollTTL, withData = false, nbg = nbg || withDeleted).andThen{
+                crudServiceFS.scroll(iteratorId, scrollTTL, withData = false).andThen{
                   case Success(res) => debugLogID.foreach(id => logger.info(s"[$id] scroll response: ${res.infotons.fold("empty")(i => s"${i.size} results")}"))
                   case Failure(err) => debugLogID.foreach(id => logger.error(s"[$id] scroll source failed",err))
                 }.map(iir => Some(iir -> ir))
@@ -262,7 +259,7 @@ class Streams @Inject()(crudServiceFS: CRUDServiceFS) extends LazyLogging {
     }
   }
 
-  def superScrollSource(nbg: Boolean,
+  def superScrollSource(
                         pathFilter: Option[PathFilter] = None,
                         fieldFilter: Option[FieldFilter] = None,
                         datesFilter: Option[DatesFilter] = None,
@@ -270,20 +267,20 @@ class Streams @Inject()(crudServiceFS: CRUDServiceFS) extends LazyLogging {
                         withHistory: Boolean = false,
                         withDeleted: Boolean = false
                        )(implicit ec: ExecutionContext): Future[(Source[IterationResults, NotUsed],Long)] = {
-    seqScrollSource(ScrollStarter(pathFilter,fieldFilter,datesFilter,paginationParams,120,withHistory,withDeleted,nbg)){
-      case ScrollStarter(pf,ff,df,pp,ttl,h,d,nbg) =>
-        crudServiceFS.startSuperScroll(pf,ff,df,pp,ttl,h,d,nbg || withDeleted)
+    seqScrollSource(ScrollStarter(pathFilter,fieldFilter,datesFilter,paginationParams,120,withHistory,withDeleted)){
+      case ScrollStarter(pf,ff,df,pp,ttl,h,d) =>
+        crudServiceFS.startSuperScroll(pf,ff,df,pp,ttl,h,d)
     }
   }
 
-  private def enrichWithDataAndFlatten(src: Source[Seq[Infoton],NotUsed], nbg: Boolean): Source[Infoton,NotUsed] = {
+  private def enrichWithDataAndFlatten(src: Source[Seq[Infoton],NotUsed]): Source[Infoton,NotUsed] = {
     src
       .mapConcat {
         case infotons if infotons.isEmpty => List(Future.successful(Vector.empty[Infoton]))
         case infotons => {
           infotons.map(_.uuid)(bo1)
             .grouped(Settings.cassandraBulkSize)
-            .map(crudServiceFS.getInfotonsByUuidAsync(_,nbg))
+            .map(crudServiceFS.getInfotonsByUuidAsync(_))
             .toVector
         }
       }
@@ -297,8 +294,8 @@ class Streams @Inject()(crudServiceFS: CRUDServiceFS) extends LazyLogging {
               deleted: Boolean,
               descendants: Boolean,
               lengthHint: Int,
-              fieldFilters: Option[FieldFilter],
-              nbg: Boolean)(implicit ec: ExecutionContext): Source[SearchThinResult,NotUsed] = {
+              fieldFilters: Option[FieldFilter])
+             (implicit ec: ExecutionContext): Source[SearchThinResult,NotUsed] = {
 
     Source.unfoldAsync[Long, Source[SearchThinResult, NotUsed]](firstTimeStamp) { timeStamp =>
 
@@ -312,8 +309,7 @@ class Streams @Inject()(crudServiceFS: CRUDServiceFS) extends LazyLogging {
                 paginationParams = pp,
                 withHistory      = history,
                 withDeleted      = deleted,
-                fieldSortParams  = fsp,
-                nbg = nbg || deleted)
+                fieldSortParams  = fsp)
 
       future.flatMap {
         case SearchThinResults(total, offset, length, results, _) => {
@@ -342,8 +338,8 @@ class Streams @Inject()(crudServiceFS: CRUDServiceFS) extends LazyLogging {
                 fieldFilters = ffs2,
                 paginationParams = PaginationParams(0, 500),
                 withHistory = history,
-                withDeleted = deleted,
-                nbg = nbg || deleted)
+                withDeleted = deleted
+              )
 
               fut.map {
                 case (_, 0L) => None
@@ -383,5 +379,4 @@ case class ScrollStarter(pathFilter: Option[PathFilter] = None,
                          paginationParams: PaginationParams = DefaultPaginationParams,
                          scrollTTL: Long = 60,
                          withHistory: Boolean = false,
-                         withDeleted: Boolean = false,
-                         nbg: Boolean = false)
+                         withDeleted: Boolean = false)

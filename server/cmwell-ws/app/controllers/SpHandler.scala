@@ -712,7 +712,7 @@ trait Importer[A] { this: LazyLogging =>
   def invalidateCaches(): Unit
 
   def readFileInfoton(path: String, nbg: Boolean): Future[FileInfotonContent] = {
-    crudServiceFS.getInfoton(path, None, None, nbg).map(res => (res: @unchecked) match {
+    crudServiceFS.getInfoton(path, None, None).map(res => (res: @unchecked) match {
       case Some(Everything(FileInfoton(_, _, _, _, fields, Some(content),_))) => FileInfotonContent(content.data.get, fields.getOrElse(Map()))
       case x => logger.debug(s"Could not fetch $path, got $x"); throw new RuntimeException(s"Could not fetch $path")
     })

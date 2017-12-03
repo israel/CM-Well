@@ -183,7 +183,6 @@ class Health @Inject()(crudServiceFS: CRUDServiceFS) extends InjectedController 
   }
 
   def getWsHealth = Action { implicit req =>
-    Ok(s"Old IRW ReadCache Size: ${crudServiceFS._irwService.dataCahce.size()}\n" +
-      s"New IRW ReadCache Size: ${crudServiceFS._irwService2.dataCahce.size()}\n")
+    Ok(s"IRW ReadCache Size: ${crudServiceFS.irwService.dataCahce.size()}\n")
   }
 }
