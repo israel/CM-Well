@@ -67,7 +67,7 @@ object Runner extends LazyLogging {
         IRWService.newIRW(irwServiceDao, false)
       }
 
-      val ftsService = FTSService("bg.es.yml")
+      val ftsService = FTSService(config)
 
       val zStore = ZStore(casDao)
 

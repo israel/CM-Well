@@ -92,13 +92,13 @@ object SbtZookeeperPlugin extends sbt.AutoPlugin{
 
   private def isZookeeperRunning:Boolean = {
     val p = sys.runtime.exec("jps -l")
-    val lines = io.Source.fromInputStream(p.getInputStream).getLines()
+    val lines = scala.io.Source.fromInputStream(p.getInputStream).getLines()
     lines.exists(_.contains("org.apache.zookeeper.server.quorum.QuorumPeerMain"))
   }
 
   private def killZookeeper(force:Boolean = false)(implicit logger:Logger) = {
     val p = sys.runtime.exec("jps -l")
-    val lines = io.Source.fromInputStream(p.getInputStream).getLines()
+    val lines = scala.io.Source.fromInputStream(p.getInputStream).getLines()
     val pidOpt = lines.collectFirst({case s if (s.contains("org.apache.zookeeper.server.quorum.QuorumPeerMain")) => s.split(" ")(0)})
     pidOpt match {
       case Some(pid) =>

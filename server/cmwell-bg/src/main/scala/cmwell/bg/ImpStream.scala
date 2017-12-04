@@ -150,10 +150,11 @@ class ImpStream(partition: Int, config: Config, irwService: IRWService, zStore: 
           ftsService.createIndex(s"cm_well_p${partition}_0").flatMap { createResponse =>
             if (createResponse.isAcknowledged) {
               logger info s"successfully created first index for partition $partition"
-              scheduleFuture(5.seconds) {
-                logger info "updating all aliases"
-                ftsService.updateAllAlias()
-              }
+              Future.successful(true)
+//              scheduleFuture(5.seconds) {
+//                logger info "updating all aliases"
+//                ftsService.updateAllAlias()
+//              }
             }
             else
               Future.failed(new RuntimeException(s"failed to create first index for partition: $partition"))
@@ -834,9 +835,7 @@ class ImpStream(partition: Int, config: Config, irwService: IRWService, zStore: 
               val (pref, suf) = currentIndexName.splitAt(currentIndexName.lastIndexOf('_') + 1)
               val nextCount = suf.toInt + 1
               val nextIndexName = pref + nextCount
-              cmwell.util.concurrent.retry(3)(ftsService.createIndex(nextIndexName)).flatMap { _ =>
-                scheduleFuture(10.seconds)(ftsService.updateAllAlias)
-              }.map { case _ =>
+              cmwell.util.concurrent.retry(3)(ftsService.createIndex(nextIndexName)).map { case _ =>
                 currentIndexName = nextIndexName
                 startingIndexCount = 0
                 bgMessage

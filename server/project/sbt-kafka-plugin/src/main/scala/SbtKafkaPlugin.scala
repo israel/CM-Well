@@ -155,7 +155,7 @@ object SbtKafkaPlugin extends sbt.AutoPlugin {
 
   private def stopJavaProcessByName(processName:String, forcibly:Boolean = false): Boolean = {
     val p = sys.runtime.exec("jps -l")
-    val lines = io.Source.fromInputStream(p.getInputStream).getLines().toSeq
+    val lines = scala.io.Source.fromInputStream(p.getInputStream).getLines().toSeq
     val pidOpt = lines.collectFirst({case s if (s.contains(processName)) => s.split(" ")(0)})
     val success = pidOpt match {
       case Some(pid) =>
@@ -169,7 +169,7 @@ object SbtKafkaPlugin extends sbt.AutoPlugin {
 
   private def isKafkaRunning:Boolean = {
     val p = sys.runtime.exec("jps -l")
-    val lines = io.Source.fromInputStream(p.getInputStream).getLines()
+    val lines = scala.io.Source.fromInputStream(p.getInputStream).getLines()
     lines.exists(_.contains("kafka.Kafka"))
   }
 

@@ -25,8 +25,9 @@ libraryDependencies ++= {
       .exclude("log4j", "log4j"),
     dm("org.codehaus.groovy", "groovy-all"),
     dm("uk.org.lidalia","sysout-over-slf4j"),
+    dm("io.netty", "netty-transport"),
     dm("pl.allegro.tech","embedded-elasticsearch") % Test
-  )
+  ).map{_.exclude("io.netty", "netty")}
 }
 
 cassandraVersion := Versions.cassandra

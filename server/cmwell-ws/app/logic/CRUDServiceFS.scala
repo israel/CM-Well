@@ -100,12 +100,12 @@ class CRUDServiceFS @Inject()()(implicit ec: ExecutionContext, sys: ActorSystem)
 //  }
 
 //  val ESMappingsCacheOld = new SingleElementLazyAsyncCache[Set[String]](Settings.fieldsNamesCacheTimeout.toMillis,Set.empty)(ftsServiceOld.getMappings(withHistory = true))
-//  val ESMappingsCache = new SingleElementLazyAsyncCache[Set[String]](Settings.fieldsNamesCacheTimeout.toMillis,Set.empty)(ftsService.getMappings(withHistory = true))
+  val ESMappingsCache = new SingleElementLazyAsyncCache[Set[String]](Settings.fieldsNamesCacheTimeout.toMillis,Set.empty)(ftsService.getMappings(withHistory = true))
 //  def ESMappingsCache(nbg: Boolean = newBG): SingleElementLazyAsyncCache[Set[String]] = {
 //    if(nbg || newBG) ESMappingsCacheNew
 //    else ESMappingsCacheOld
 //  }
-  val ESMappingsCache:SingleElementLazyAsyncCache[Set[String]] = null
+//  val ESMappingsCache:SingleElementLazyAsyncCache[Set[String]] = null
 
   val metaNsCache =
     new SingleElementLazyAsyncCache[Set[String]](Settings.fieldsNamesCacheTimeout.toMillis,Set.empty)(fetchEntireMetaNsAsPredicates())

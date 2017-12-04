@@ -46,7 +46,7 @@ libraryDependencies ++= {
     dm("com.typesafe.play","play-cache")
       .exclude("com.typesafe.akka","akka-slf4j"), // required for pac4j
     dm("com.fasterxml.jackson.core","jackson-core"),
-    dm("io.netty","netty"),
+//    dm("io.netty","netty"),
     dm("joda-time","joda-time"),
     dm("net.logstash.logback","logstash-logback-encoder"),
     dm("org.apache.httpcomponents","httpclient")
@@ -80,7 +80,8 @@ libraryDependencies ++= {
   dm("org.openrdf.sesame", "sesame-sail-memory"),
   dm("org.openrdf.sesame", "sesame-queryresultio-sparqljson"),
   dm("org.openrdf.sesame", "sesame-queryresultio-text"),
-  dm("org.openrdf.sesame", "sesame-sail-base"))
+  dm("io.netty", "netty-transport"),
+  dm("org.openrdf.sesame", "sesame-sail-base")).map{_.exclude("io.netty", "netty")}
 }
 
 testListeners := Seq.empty[TestReportListener]
