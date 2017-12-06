@@ -25,7 +25,7 @@ libraryDependencies ++= {
       .exclude("log4j", "log4j"),
     dm("org.codehaus.groovy", "groovy-all"),
     dm("uk.org.lidalia","sysout-over-slf4j"),
-    dm("io.netty", "netty-transport"),
+    dm("io.netty", "netty-transport")
   ).map{_.exclude("io.netty", "netty")}
 }
 
