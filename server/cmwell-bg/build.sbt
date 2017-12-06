@@ -26,9 +26,13 @@ libraryDependencies ++= {
     dm("org.codehaus.groovy", "groovy-all"),
     dm("uk.org.lidalia","sysout-over-slf4j"),
     dm("io.netty", "netty-transport"),
-    dm("pl.allegro.tech","embedded-elasticsearch") % Test
   ).map{_.exclude("io.netty", "netty")}
 }
+
+libraryDependencies ++= Seq(
+  "net.lingala.zip4j" % "zip4j" % "1.3.2" % Test,
+  "pl.allergro.tech" % "embedded-elasticsearch" % "2.4.3" % Test from "https://github.com/israel/embedded-elasticsearch/releases/download/2.4.3/embedded-elasticsearch-2.4.3.jar"
+)
 
 cassandraVersion := Versions.cassandra
 
