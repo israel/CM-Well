@@ -812,7 +812,7 @@ abstract class Host(user: String,
       Try(sudoComm(com).!!)
     else {
       val seq = Seq("bash", "-c", com)
-      if (verbose) println("command: " + seq.mkString(" "))
+      if (verbose) println("local command: " + seq.mkString(" "))
       Try(seq.!!)
     }
   }
@@ -826,7 +826,7 @@ abstract class Host(user: String,
   }
 
   def _rsync(from: String, to: String, host: String, tries: Int = 10, sudo: Boolean): Try[String] = {
-    val seq = Seq("rsync", s"""–-rsync-path=”mkdir -p $to && rsync”""", "-Paz", "--delete", from, host + ":" + to)
+    val seq = Seq("rsync", "-Paz", "--delete", from, host + ":" + to)
 
     if (verbose) println("command: " + seq.mkString(" "))
     val res = Try(seq.!!)

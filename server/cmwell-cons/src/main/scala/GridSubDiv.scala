@@ -220,7 +220,7 @@ case class GridSubDiv(user : String ,
 
         }
 
-        val esSubDivs = for(i <- 1 to dataDirs.esDataDirs.size)
+        val esSubDivs = for(i <- 1 to (dataDirs.esDataDirs.size-1))
         yield {
           ElasticsearchConf(
             clusterName = clusterName,
