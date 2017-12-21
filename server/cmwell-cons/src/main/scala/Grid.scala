@@ -132,20 +132,6 @@ case class Grid(user : String ,
           autoCreateIndex = withElk
         )
 
-        val batch = BatchConf(
-          home = homeDir,
-          clusterName = clusterName,
-          dataCenter = dataCenter,
-          hostName = host,
-          resourceManager = bgAllocations,
-          sName = "start.sh",
-          isMaster = host == ips(0),
-          logLevel = BatchProps(this).LogLevel.getLogLevel,
-          debug = deb,
-          hostIp = host,
-          minMembers = getMinMembers
-        )
-
         val bg = BgConf(
           home = homeDir,
           zookeeperServers = ips.take(3),
@@ -156,7 +142,7 @@ case class Grid(user : String ,
           sName = "start.sh",
           isMaster = host == ips(0),
           partition = ips.indexOf(host),
-          logLevel = BatchProps(this).LogLevel.getLogLevel,
+          logLevel = BgProps(this).LogLevel.getLogLevel,
           debug = deb,
           hostIp = host,
           minMembers = getMinMembers,
@@ -264,7 +250,7 @@ case class Grid(user : String ,
         )
 
         List(
-          cas,es,esMaster,batch,web,cw,ctrl,dcConf,zookeeper,kafka
+          cas,es,esMaster,web,cw,ctrl,dcConf,zookeeper,kafka
         ) ++(if(withKafka && withZookeeper) List(bg) else List.empty[ComponentConf] ) ++ (if(withElk) List(logstash,kibana) else List.empty[ComponentConf])
     }
   }

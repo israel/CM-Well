@@ -907,7 +907,7 @@ abstract class Host(user: String,
     info("  creating application directories")
     //command(s"mkdir -p ${instDirs.intallationDir}/", hosts, false)
     command(s"mkdir ${instDirs.intallationDir}/app ${instDirs.intallationDir}/conf ${instDirs.intallationDir}/data ${instDirs.intallationDir}/bin", hosts, false)
-    command(s"mkdir ${instDirs.intallationDir}/app/batch ${instDirs.intallationDir}/app/bg ${instDirs.intallationDir}/app/ctrl ${instDirs.intallationDir}/app/dc ${instDirs.intallationDir}/app/cas ${instDirs.intallationDir}/app/es ${instDirs.intallationDir}/app/ws ${instDirs.intallationDir}/app/scripts ${instDirs.intallationDir}/app/tools", hosts, false)
+    command(s"mkdir ${instDirs.intallationDir}/app/bg ${instDirs.intallationDir}/app/ctrl ${instDirs.intallationDir}/app/dc ${instDirs.intallationDir}/app/cas ${instDirs.intallationDir}/app/es ${instDirs.intallationDir}/app/ws ${instDirs.intallationDir}/app/scripts ${instDirs.intallationDir}/app/tools", hosts, false)
     command(s"ln -s ${dataDirs.logsDataDir} ${instDirs.intallationDir}/log", hosts, false)
     info("  deploying components")
     deployComponents(hosts)
@@ -943,7 +943,6 @@ abstract class Host(user: String,
 
   private def createAppLinks(hosts: GenSeq[String]) = {
 
-    command(s"test -L ${instDirs.globalLocation}/cm-well/app/batch/logs || ln -s ${instDirs.globalLocation}/cm-well/log/batch/ ${instDirs.globalLocation}/cm-well/app/batch/logs", hosts, false)
     command(s"test -L ${instDirs.globalLocation}/cm-well/app/bg/logs || ln -s ${instDirs.globalLocation}/cm-well/log/bg/ ${instDirs.globalLocation}/cm-well/app/bg/logs", hosts, false)
     command(s"test -L ${instDirs.globalLocation}/cm-well/app/ws/logs || ln -s ${instDirs.globalLocation}/cm-well/log/ws/ ${instDirs.globalLocation}/cm-well/app/ws/logs", hosts, false)
     command(s"mkdir -p ${instDirs.globalLocation}/cm-well/log/cw/", hosts, false)
@@ -951,8 +950,6 @@ abstract class Host(user: String,
     command(s"test -L ${instDirs.globalLocation}/cm-well/app/ctrl/logs || ln -s ${instDirs.globalLocation}/cm-well/log/ctrl/ ${instDirs.globalLocation}/cm-well/app/ctrl/logs", hosts, false)
     command(s"test -L ${instDirs.globalLocation}/cm-well/app/dc/logs || ln -s ${instDirs.globalLocation}/cm-well/log/dc/ ${instDirs.globalLocation}/cm-well/app/dc/logs", hosts, false)
 
-    command(s"mkdir -p ${instDirs.globalLocation}/cm-well/conf/batch/", hosts, false)
-    command(s"test -L ${instDirs.globalLocation}/cm-well/app/batch/conf || ln -s ${instDirs.globalLocation}/cm-well/conf/batch/ ${instDirs.globalLocation}/cm-well/app/batch/conf", hosts, false)
     command(s"test -L ${instDirs.globalLocation}/cm-well/app/bg/conf || ln -s ${instDirs.globalLocation}/cm-well/conf/bg/ ${instDirs.globalLocation}/cm-well/app/bg/conf", hosts, false)
     command(s"test -L ${instDirs.globalLocation}/cm-well/app/ws/conf || ln -s ${instDirs.globalLocation}/cm-well/conf/ws/ ${instDirs.globalLocation}/cm-well/app/ws/conf", hosts, false)
     command(s"mkdir -p ${instDirs.globalLocation}/cm-well/conf/cw/", hosts, false)
@@ -975,19 +972,6 @@ abstract class Host(user: String,
     deployApplication(hosts)
   }
 
-  def updateBatch: Unit = updateBatch()
-
-  def updateBatch(hosts: GenSeq[String] = ips) {
-    hosts.foreach { h =>
-      rsync(s"./components/cmwell-batch_2.10-1.0.1-SNAPSHOT-selfexec.jar", s"${instDirs.globalLocation}/cm-well/app/bg/_cmwell-batch_2.10-1.0.1-SNAPSHOT-selfexec.jar", List(h))
-      //stopWebservice(List(hosts))
-      stopBatch(List(h))
-      command(s"mv ${instDirs.globalLocation}/cm-well/app/bg/_cmwell-batch_2.10-1.0.1-SNAPSHOT-selfexec.jar ${instDirs.globalLocation}/cm-well/app/bg/cmwell-batch_2.10-1.0.1-SNAPSHOT-selfexec.jar", List(h), false)
-      startBatch(List(h))
-      //startWebservice(List(hosts)
-    }
-
-  }
 
   def updateWebService: Unit = updateWebService()
 
@@ -1189,8 +1173,6 @@ abstract class Host(user: String,
 
     if (hosts.contains(ips(0))) {
       val newIndexerMaster = newInstance.ips(0)
-      newInstance.stopBatch(List(newIndexerMaster))
-      newInstance.startBatch(List(newIndexerMaster))
       info(s"${newInstance.ips(0)}'s indexer will be promoted to be master.")
     }
 
@@ -1317,7 +1299,6 @@ abstract class Host(user: String,
     checkProduction
     val tries = if (force) 0 else 5
     stopWebservice(hosts, tries)
-    stopBatch(hosts, tries)
     stopBg(hosts, tries)
     stopElasticsearch(hosts, tries)
     stopCassandra(hosts, tries)
@@ -1412,15 +1393,6 @@ abstract class Host(user: String,
   }
 
 
-  def stopBatch: Unit = stopBatch(ips.par)
-
-  def stopBatch(hosts: String*): Unit = stopBatch(hosts.par)
-
-  def stopBatch(hosts: GenSeq[String], tries: Int = 5) {
-    checkProduction
-    killProcess("batch", "", hosts, tries)
-  }
-
   def stopWebservice: Unit = stopWebservice(ips.par)
 
   def stopWebservice(hosts: String*): Unit = stopWebservice(hosts.par)
@@ -1474,21 +1446,10 @@ abstract class Host(user: String,
 
   def startBg: Unit = startBg(ips.par)
 
-  def startBg(hosts: String*): Unit = startBatch(hosts.par)
-
   def startBg(hosts: GenSeq[String]) {
     checkProduction
     if (withZkKfk)
       command(s"cd ${instDirs.globalLocation}/cm-well/app/bg; ${startScript("./start.sh")}", hosts, false)
-  }
-
-  def startBatch: Unit = startBatch(ips.par)
-
-  def startBatch(hosts: String*): Unit = startBatch(hosts.par)
-
-  def startBatch(hosts: GenSeq[String]) {
-    checkProduction
-    command(s"cd ${instDirs.globalLocation}/cm-well/app/batch; ${startScript("./start.sh")}", hosts, false)
   }
 
   def startWebservice: Unit = startWebservice(ips.par)
@@ -1543,7 +1504,6 @@ abstract class Host(user: String,
     startKafka(hosts)
 
     startCtrl(hosts)
-    startBatch(hosts)
     startCW(hosts)
     startWebservice(hosts)
     startDc(hosts)
@@ -1627,8 +1587,6 @@ abstract class Host(user: String,
     // wait until all the schemas are written.
     Thread.sleep(10000)
 
-    info("  starting batch")
-    startBatch(hosts)
     info("  starting bg")
     startBg(hosts)
     info(" starting cw")
@@ -1974,7 +1932,7 @@ abstract class Host(user: String,
 
   def upgradeCtrl = upgrade(List(CtrlProps(this)), uploadSpa = false, uploadDocs = false)
 
-  def upgradeBG = upgrade(List(BatchProps(this)), uploadSpa = false, uploadDocs = false)
+  def upgradeBG = upgrade(List(BgProps(this)), uploadSpa = false, uploadDocs = false)
 
   def upgradeWS = upgrade(List(WebserviceProps(this)))
 
@@ -1999,7 +1957,6 @@ abstract class Host(user: String,
 
 
     info("stopping CM-WELL components")
-    stopBatch(hosts)
     stopBg(hosts)
     stopDc(hosts)
     stopCW(hosts)
@@ -2022,7 +1979,6 @@ abstract class Host(user: String,
 
     hosts2.foreach { host => info(s"waiting for $host to respond"); WebServiceLock().com(host) }
 
-    startBatch(hosts)
     startBg(hosts)
     startDc(hosts)
     startCW(hosts)
@@ -2031,7 +1987,7 @@ abstract class Host(user: String,
 
   def upgrade: Unit = upgrade()
 
-  def upgrade(baseProps: List[ComponentProps] = List(CassandraProps(this), ElasticsearchProps(this), KafkaProps(this), ZooKeeperProps(this), BgProps(this), BatchProps(this), WebserviceProps(this), CtrlProps(this), DcProps(this), TlogProps(this)), clearTlogs: Boolean = false, uploadSpa: Boolean = true, uploadDocs: Boolean = true, uploadUserInfotons: Boolean = true, withUpdateSchemas: Boolean = false, hosts: GenSeq[String] = ips) {
+  def upgrade(baseProps: List[ComponentProps] = List(CassandraProps(this), ElasticsearchProps(this), KafkaProps(this), ZooKeeperProps(this), BgProps(this), WebserviceProps(this), CtrlProps(this), DcProps(this), TlogProps(this)), clearTlogs: Boolean = false, uploadSpa: Boolean = true, uploadDocs: Boolean = true, uploadUserInfotons: Boolean = true, withUpdateSchemas: Boolean = false, hosts: GenSeq[String] = ips) {
 
     checkProduction
     refreshUserState(user, None, hosts)
@@ -2337,8 +2293,6 @@ abstract class Host(user: String,
     restartCW
     restartDc
 
-    stopBatch
-    startBatch
   }
 
   def restartApp(host: String) = {
@@ -2355,8 +2309,6 @@ abstract class Host(user: String,
     stopDc(host)
     startDc(host)
 
-    stopBatch(host)
-    startBatch(host)
   }
 
   def restartWebservice {
