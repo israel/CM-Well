@@ -621,7 +621,7 @@ abstract class Host(user: String,
     sshHosts.foreach { sshHost =>
       val cmd = Seq("bash", "-c", s"read PASS; ${UtilCommands.sshpass} -p $$PASS ssh-copy-id -i $privateKey -o StrictHostKeyChecking=no $sshHost")
       if (verbose) println("command: " + cmd.mkString(" "))
-      (s"echo -e -n $pass\\n" #| cmd).!!
+      (Seq("bash", "-c", s"echo -e -n $pass\\\\n") #| cmd).!!
     }
   }
 
@@ -786,15 +786,15 @@ abstract class Host(user: String,
     if (!ips.contains(host) && host != haProxy.map(x => x.host).getOrElse("")) throw new Exception(s"The host $host is not part of this cluster")
     val (readVarsLine, varValues) = variables.fold(("", "")) {
       case ((readVarsStr, varValuesForEcho), (varName, value)) =>
-        (s"$readVarsStr read $varName;", s"$varValuesForEcho$value\\n")
+        (s"$readVarsStr read $varName;", s"$varValuesForEcho$value\\\\n")
     }
     val (commandLine, process) = if (sudo && isSu) {
       val cmd = s"""ssh -o StrictHostKeyChecking=no -o LogLevel=ERROR ${sudoer.get.name}@$host export PATH=$path;$readVarsLine read PASS; sshpass -p $$PASS bash -c "${escapedCommand(com)}"""" //old version that get stuck sometimes - val command = s"""ssh -o StrictHostKeyChecking=no ${sudoer.get.name}@$host bash -c $$'{ export PATH=$path; read PASS; ./sshpass -p $$PASS bash -c "${escapedCommand(com)}"; }'"""
-      (cmd, s"echo -e -n $varValues${sudoer.get.pass}\\n" #| cmd)
+      (cmd, Seq("bash", "-c", s"echo -e $varValues${sudoer.get.pass}") #| cmd)
     } else {
       if (variables.nonEmpty) {
         val cmd = s"""ssh -o StrictHostKeyChecking=no -o LogLevel=ERROR $user@$host export PATH=$path;$readVarsLine bash -c "${escapedCommand(com)}""""
-        (cmd, s"echo -e -n $varValues" #| cmd)
+        (cmd, Seq("bash", "-c", s"echo -e ${varValues.dropRight(1)}") #| cmd)
       }
       else {
         val cmd = Seq("ssh", "-o", "StrictHostKeyChecking=no", "-o", "LogLevel=ERROR", s"$user@$host", s"PATH=$path $com")
@@ -984,7 +984,7 @@ abstract class Host(user: String,
       stopBatch(List(h))
       command(s"mv ${instDirs.globalLocation}/cm-well/app/bg/_cmwell-batch_2.10-1.0.1-SNAPSHOT-selfexec.jar ${instDirs.globalLocation}/cm-well/app/bg/cmwell-batch_2.10-1.0.1-SNAPSHOT-selfexec.jar", List(h), false)
       startBatch(List(h))
-      //startWebservice(List(hosts))
+      //startWebservice(List(hosts)
     }
 
   }

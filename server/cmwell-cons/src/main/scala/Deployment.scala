@@ -321,11 +321,11 @@ case class CassandraProps(h : Host) extends ComponentProps(h, "cassandra", "comp
 case class ElasticsearchProps(h : Host) extends ComponentProps(h, "elasticsearch", "components" , false) with DataComponent with LoggingComponent with ConfigurableComponent with RunnableComponent {
   override val componentName : String = "elasticsearch"
   override val componentDataDirs: Map[String, GenSeq[String]] = Map(
-    "es" -> h.getDataDirs.esDataDirs,
+    "es" -> h.getDataDirs.esDataDirs.filterNot(_.endsWith("master")),
 //    "es-master" -> List(s"${h.getInstDirs.intallationDir}/data")
-    "es-master" -> List(s"${h.getDataDirs.esDataDirs.head.substring(0, h.getDataDirs.esDataDirs.head.lastIndexOf('/'))}/es-master")
+    "es-master" -> h.getDataDirs.esDataDirs.filter{_.endsWith("master")}
   )
-  override val componentMappings: Map[String, Int] = Map("es" -> h.getDataDirs.esDataDirs.size, "es-master" -> 1)
+  override val componentMappings: Map[String, Int] = Map("es" -> (h.getDataDirs.esDataDirs.size - 1), "es-master" -> 1)
 
   override def upgradeMethod : UpgradeMethod = PreUpgrade
 
@@ -618,7 +618,7 @@ class Deployment(h : Host) {
     val writer = new PrintWriter(f)
     writer.write(content)
     writer.close
-    h.command(s"mkdir -p $location")
+    h.command(s"mkdir -p $location", hosts, false)
     h.rsync(tmpName, s"$location/$fileName" , hosts)
     f.delete()
   }
