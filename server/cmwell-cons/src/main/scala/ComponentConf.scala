@@ -257,28 +257,6 @@ case class ElasticsearchConf(clusterName : String, nodeName : String, dataNode :
       s"/log/es${getIndexTxt}/"
   }
   override def mkScript: ConfFile = {
-    /*def jvmArgs = {
-      import scala.math._
-      val mXmx = resourceManager.getMxmx
-      val mXms = resourceManager.getMxms
-      val mXmn = resourceManager.getMxmn
-      val mXss = resourceManager.getMxss
-      Seq("-XX:+UseCondCardMark",
-        "-Duser.timezone=GMT0",
-        mXmx,
-        mXms,
-        mXmn,
-        mXss,
-        "-Djava.awt.headless=true",
-        "-XX:+UseG1GC",
-        "-XX:+HeapDumpOnOutOfMemoryError",
-        s"-Dcom.sun.management.jmxremote.port=${jmxremotePort}",
-        "-Dcom.sun.management.jmxremote.ssl=false",
-        "-Dcom.sun.management.jmxremote.authenticate=false",
-        "-Delasticsearch",
-        s"-Des.path.home=$home/app/es/cur",
-        s"-Des.config=$home/conf/${dir}/es.yml")
-    }*/
     val agentLibArgs = Seq.empty //Seq(s"-javaagent:$home/app/ctrl/cur", s"-Dctrl.listenAddress=$listenAddress", s"-Dctrl.seedNodes=${host}", s"-Dctrl.clusterName=$clusterName", s"-Dctrl.roles=Metrics,ElasticsearchNode")
     val cmsGc = Seq("-XX:+UseCondCardMark",
       "-XX:+UseParNewGC",
@@ -423,14 +401,14 @@ case class ZookeeperConf(home : String, clusterName : String, servers : Seq[Stri
   }
 
   override def mkScript: ConfFile = {
-    val exports = s"export PATH=$home/app/java/bin:$home/bin/utils:$PATH"
+    val exports = s"""export PATH=$home/app/java/bin:$home/bin/utils:$PATH\nexport ZOO_LOG_DIR=$home/log/zookeeper\nexport JVMFLAGS="-Xmx500m -Xms500m""""
     val cp = s"cur/lib/slf4j-log4j12-1.6.1.jar:cur/lib/slf4j-api-1.6.1.jar:cur/lib/netty-3.7.0.Final.jar:cur/lib/log4j-1.2.16.jar:cur/lib/jline-0.9.94.jar:cur/zookeeper-3.4.6.jar:$home/conf/$dir"
     val scriptString =
       s"""
          |$exports
           |$CHKSTRT
           |$BMSG
-          |starter java -Xmx300m -Xms300m -XX:+UseG1GC -cp $cp -Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.local.only=false org.apache.zookeeper.server.quorum.QuorumPeerMain $home/conf/$dir/zoo.cfg > $home/log/$dir/stdout.log 2>  $home/log/$dir/stderr.log &
+          |starter $home/app/zookeeper/cur/bin/zkServer.sh start $home/conf/$dir/zoo.cfg > $home/log/$dir/stdout.log 2>  $home/log/$dir/stderr.log &
       """.stripMargin
     ConfFile("start.sh",scriptString,true)
   }
@@ -451,7 +429,7 @@ case class ZookeeperConf(home : String, clusterName : String, servers : Seq[Stri
     val loggerConf = ResourceBuilder.getResource("scripts/templates/log4j-zookeeper.properties", loggerMap)
 
     List(ConfFile("zoo.cfg", confContent, false),
-         ConfFile("log4j.properties", loggerConf, false),
+         ConfFile("log4j.properties", loggerConf, false, Some(s"$home/app/zookeeper/cur/conf")),
          ConfFile("myid", myId, false, Some(s"$home/data/$dir") ))
   }
 }
@@ -531,68 +509,6 @@ case class BgConf(home : String, zookeeperServers : Seq[String], clusterName: St
          ConfFile("application.conf", applicationConfConf, false))
   }
 }
-
-case class BatchConf(home : String, clusterName: String, dataCenter :String ,hostName : String , resourceManager : JvmMemoryAllocations, sName : String, isMaster : Boolean , minMembers : Int = 1 , logLevel : String , debug : Boolean, hostIp : String) extends ComponentConf(hostIp, s"$home/app/batch",sName, s"$home/conf/batch","batch.yml", 1) {
-  val agentLibArgs = Seq.empty //Seq(s"-javaagent:$home/app/ctrl/cur", s"-Dctrl.listenAddress=$hostIp", s"-Dctrl.seedNodes=${host}", s"-Dctrl.clusterName=$clusterName", s"-Dctrl.roles=Metrics,BatchNode")
-
-  override def getPsIdentifier = s"/log/batch/"
-  override def mkScript: ConfFile = {
-    def jvmArgs = {
-      val aspectj = if(/*hasOption("useAspectj")*/ false) s"$home/app/tools/aspectjweaver.jar" else ""
-      val mXmx = resourceManager.getMxmx
-      val mXms = resourceManager.getMxms
-      val mXmn = resourceManager.getMxmn
-      val mXss = resourceManager.getMxss
-      val jmx = Seq(s"-Dcom.sun.management.jmxremote.port=${PortManagers.batch.jmxPortManager.getPort(1)}",
-        "-XX:-OmitStackTraceInFastThrow",
-        "-XX:+UseG1GC",
-        "-Dcom.sun.management.jmxremote.ssl=false",
-        "-Dcom.sun.management.jmxremote.authenticate=false")
-      Seq("-XX:+UseCondCardMark",
-        "-Duser.timezone=GMT0",
-        "-XX:+HeapDumpOnOutOfMemoryError",
-        aspectj,
-        "-Dfile.encoding=UTF-8",
-        s"-Dlog.level=$logLevel",
-        mXmx, mXms, mXmn, mXss) ++ jmx ++ JVMOptimizer.gcLoggingJVM(s"$home/log/batch/gc.log")
-    }
-
-    val args = Seq("starter", "java", "$DEBUG_STR", s"-Dcmwell.home=$home") ++ agentLibArgs ++ jvmArgs ++ Seq("-cp", s""" "conf:$home/app/batch/lib/*" """, "cmwell.batch.boot.Runner")
-
-    //new java.io.File(s"$home/log/bg").mkdirs
-
-    val scriptString =
-      s"""export PATH=$home/app/java/bin:$home/bin/utils:$PATH
-       |$CHKSTRT
-       |$BMSG
-       |${genDebugStr(5009)}
-       |${args.mkString(" ")} > $home/log/batch/stdout.log 2> $home/log/batch/stderr.log &""".stripMargin
-
-    ConfFile("start.sh",scriptString,true)
-  }
-
-  override def mkConfig: List[ConfFile] = {
-    val applicationConfMap = Map[String, String](
-      "cmwell.grid.dmap.persistence.data-dir" -> s"$home/log/batch/dmap/",
-      "cmwell.grid.bind.host" -> s"$hostIp",
-      "cmwell.grid.bind.port" -> s"${Jvms.BATCH.systemPort}",
-      "cmwell.grid.seeds" -> s"$hostIp:7777",
-      "cmwell.grid.min-members" -> s"$minMembers",
-      "cmwell.grid.monitor.port" -> s"${PortManagers.batch.monitorPortManager.getPort(1)}",
-      "cmwell.clusterName" -> s"$clusterName",
-      "ftsService.clusterName" -> s"$clusterName",
-      "ftsService.transportAddress" -> s"$hostName",
-      "irwServiceDao.hostName" -> s"$hostName",
-      "indexer.isMaster" -> s"$isMaster",
-      "dataCenter.id" -> s"$dataCenter"
-    )
-    val logbackConf = ResourceBuilder.getResource("conf/batch/logback.xml", Map[String, String]())
-    val applicationConfConf = ResourceBuilder.getResource("conf/batch/application.conf", applicationConfMap)
-    List(ConfFile("logback.xml", logbackConf, false),
-         ConfFile("application.conf", applicationConfConf, false))
-  }
-}
-
 
 case class CwConf(home : String, clusterName : String, dataCenter :String , hostName : String, resourceManager : JvmMemoryAllocations, sName : String,minMembers : Int = 1,  logLevel : String,  debug : Boolean, hostIp : String, nbg: Boolean, seeds : String, seedPort : Int) extends ComponentConf(hostIp, s"$home/app/ws",sName, s"$home/conf/cw","ws.yml", 1) {
   override def mkScript: ConfFile = {

@@ -406,37 +406,6 @@ case class BgProps(h : Host) extends ComponentProps(h, "cmwell-bg" , "components
   override def upgradeMethod : UpgradeMethod = NonRolling
 }
 
-//case class BatchProps(h : Host) extends ComponentProps(h, "cmwell-batch" , "components" , true) with DataComponent with LoggingComponent with RunnableComponent {
-//  override val componentName : String = "cmwell-batch"
-//  override val componentDataDirs: Map[String, GenSeq[String]] = Map(
-//    "tlog" -> h.getDataDirs.tlogDataDirs
-//  )
-//
-//
-//  override def getComponentName(name: String, location: String): String = name
-//
-//  override def uploadComponent(localLocation: String, target: String, postFix: Option[String], hosts: GenSeq[String]): Any = {}
-//
-//  override def upgradeMethod : UpgradeMethod = NonRolling
-//  override val componentMappings: Map[String, Int] = Map("batch" -> h.getDataDirs.tlogDataDirs.size)
-//
-//  def targetLocation = "app/batch"
-//  def unpackCommand : Option[String] = None
-//  def symLinkName : Option[String] = None
-//
-//  override def isDir = false
-//  override def getUnpackedName(packageName : String, location : String) : Option[String] = None
-//
-//  def start(hosts : GenSeq[String]): Unit = {
-//    h.startBatch(hosts)
-//  }
-//
-//  def stop(hosts : GenSeq[String]): Unit = {
-//    h.stopBatch(hosts)
-//  }
-//}
-
-
 case class CtrlProps(h : Host) extends ComponentProps(h, "cmwell-controller" , "components" , true) with LoggingComponent with ConfigurableComponent with RunnableComponent {
   override val componentName: String = "cmwell-controller"
   override val componentMappings: Map[String, Int] = Map("ctrl" -> 1)
