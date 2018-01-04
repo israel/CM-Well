@@ -38,6 +38,8 @@ cassandraVersion := Versions.cassandra
 
 kafkaVersion := Versions.kafka
 
+zookeeperVersion := Versions.zookeeper
+
 cassandraCliInit := "NO_CLI_COMMANDS_SUPPLIED"
 
 cassandraCqlInit := ((resourceDirectory in Test).value / "cassandra-cql-commands.txt").absolutePath
